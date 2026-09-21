@@ -57,10 +57,20 @@ const declared = createElement(
     fontFaces: {
       Inter: '/fonts/Inter.font.glb',
       Title: { src: '/fonts/Title.font.glb', format: 'slug' },
+      Bold: { src: '/fonts/Oxanium.ttf', variation: { axes: { wght: 700 } } },
+      Display: { src: '/fonts/Oxanium.ttf', format: msdf, variation: { axes: { wght: 700, wdth: 87.5 } } },
     },
   },
   createElement(Text, { font: 'Inter' }, createElement(Text, { font: 'Title' }, 'Named provider fonts')),
 );
+createElement(GlyphProvider, {
+  // @ts-expect-error A provider entry names its axes under `axes`, exactly like `glyph.fontFace`.
+  fontFaces: { Bold: { src: '/fonts/Oxanium.ttf', variation: { wght: 700 } } },
+});
+createElement(GlyphProvider, {
+  // @ts-expect-error Axis settings are numbers, not CSS keywords.
+  fontFaces: { Bold: { src: '/fonts/Oxanium.ttf', variation: { axes: { wght: 'bold' } } } },
+});
 
 // @ts-expect-error Handle selection is internal to Text and comes from GlyphProvider or the built-in default.
 createElement(Text, { font: bitmapFont, handle: three }, 'no per-object handle');

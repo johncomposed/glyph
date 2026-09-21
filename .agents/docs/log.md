@@ -2,6 +2,11 @@
 
 ## 2026-09-21
 
+- **Accepted a pinned variation in provider font tables** — React and Vue `GlyphProvider.fontFaces` entries now take
+  `{ src, format?, variation? }` and forward the instance to `glyph.fontFace` unchanged. The shared adapter resource key
+  includes the normalized instance, so a table naming another instance is a changed declaration, while the `fvar`
+  default and an omitted variation remain one identity. See [the glyph package reference](packages/glyph.md).
+
 - **Forwarded FontFace variation to runtime baking** — `glyph.fontFace(source, { variation })` and the loader's
   source override now carry user-space axis values to the Worker bake descriptor, key shared loads and CacheStorage
   entries by the instance, and skip implicit baked-sibling discovery for a pinned instance; baked artifacts and

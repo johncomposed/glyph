@@ -5,7 +5,7 @@ description: Implements portable font loading, retained Rust shaping and layout,
 resource: ../../../packages/glyph
 workspace_package: '@pmndrs/glyph'
 documentation_type: reference
-source_digest: 'sha256:fa2ee245fdf80daa45f089c036720f7532bc299d143375c5275503c11f213372'
+source_digest: 'sha256:864c0db7eea3297764be77a6dc0db35270c91974e2da35e291283f95fadb89b7'
 tags: [package, public-api, rust, wasm, threejs, typography]
 sources:
   - id: manifest
@@ -332,11 +332,16 @@ anonymous root, or `handle(name).createText()` and `handle(name).createTextGroup
 
 React font selection has three coexisting public paths. A caller-owned FontFace may be passed directly to outer or nested
 Text; `useFont` and the typed `useBitmap`/`useMsdf`/`useSlug` leaves own hook-created declarations and mounted Font
-leases; and `GlyphProvider.fontFaces` supplies optional subtree-local string aliases from sources, `{ src, format? }`, or
-caller-owned FontFaces. All three use the same Glyph resource graph. `suspend-react` retains only stable Promise/error
-identity across React retries, and is not a semantic font cache. See [React font loading](../guides/react.md).
+leases; and `GlyphProvider.fontFaces` supplies optional subtree-local string aliases from sources,
+`{ src, format?, variation? }`, or caller-owned FontFaces. A table entry's `format` and `variation` reach
+`glyph.fontFace` unchanged, so a shorthand entry can pin a variable source to one instance; that instance is part of the
+entry's identity, and a remount table naming another instance is a changed table rather than a reuse. Both adapters
+share that identity rule through one package-owned resource key. All three use the same Glyph resource graph.
+`suspend-react` retains only stable Promise/error identity across React retries, and is not a semantic font cache. See
+[React font loading](../guides/react.md).
 
-The Vue adapter mirrors that contract for TresJS. Its `Text` and `TextGroup` are `defineComponent` render functions
+The Vue adapter mirrors that contract for TresJS, including the `fontFaces` entry shapes and their identity rule. Its
+`Text` and `TextGroup` are `defineComponent` render functions
 that construct the same retained Three classes through the Tres catalogue under private tag names; applications never
 use those tags. The paragraph style list is the `textStyle` prop rather than `style`, because Vue normalizes any
 array-valued `style` prop into one merged object while creating the vnode, before setup can observe the list; `layout`

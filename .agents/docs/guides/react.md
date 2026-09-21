@@ -31,11 +31,11 @@ React supports three coexisting ways to select a font. They all declare or consu
 none creates another byte, decoded-font, shaping, or renderer-resource cache. Choose the form by ownership and naming
 needs, not by renderer capability.[^font-face][^react-adapter]
 
-| Path | Use it when | Declaration owner | Mounted Font lease |
-| --- | --- | --- | --- |
-| Direct `FontFace` | Application code already owns a reusable declaration or exact format selection. | Caller | `<Text>` |
-| `useFont` or a format hook | A component wants React to own declaration and mounted lifetime. | Hook cache | Hook |
-| `GlyphProvider.fontFaces` | A subtree should resolve short family aliases such as `"Inter"`. | Provider for shorthand entries; caller for passed FontFaces | `<Text>` |
+| Path                       | Use it when                                                                     | Declaration owner                                           | Mounted Font lease |
+| -------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------ |
+| Direct `FontFace`          | Application code already owns a reusable declaration or exact format selection. | Caller                                                      | `<Text>`           |
+| `useFont` or a format hook | A component wants React to own declaration and mounted lifetime.                | Hook cache                                                  | Hook               |
+| `GlyphProvider.fontFaces`  | A subtree should resolve short family aliases such as `"Inter"`.                | Provider for shorthand entries; caller for passed FontFaces | `<Text>`           |
 
 ## Pass a caller-owned FontFace directly
 
@@ -107,7 +107,7 @@ leases.[^react-adapter][^react-contract]
 ## Define subtree-local string aliases
 
 `GlyphProvider.fontFaces` maps names used by `<Text font="…">` to a source, an existing FontFace, or an object carrying
-`src` and an optional format:
+`src`, an optional format, and an optional `variation` that pins a variable source to one instance:
 
 ```tsx
 import { glyph } from '@pmndrs/glyph';
@@ -123,6 +123,7 @@ export function App() {
       fontFaces={{
         Inter: '/fonts/Inter.font.glb',
         Body: { src: '/fonts/Body.font.glb', format: msdf },
+        Bold: { src: '/fonts/Oxanium.ttf', variation: { axes: { wght: 700 } } },
         Title: ExistingTitle,
       }}
       fallback={null}
@@ -136,7 +137,8 @@ export function App() {
 ```
 
 Aliases are lazy: the selected Text loads only the format it resolves. The provider disposes declarations it created
-from source or `{ src, format? }` entries when its retained subtree lifetime ends. It never disposes `ExistingTitle`,
+from source or `{ src, format?, variation? }` entries when its retained subtree lifetime ends. A `variation` is part of
+the entry's identity: a remount table that names another instance is a different table. It never disposes `ExistingTitle`,
 because that declaration remains caller-owned. Supplying `fontFaces` creates the provider's local Suspense boundary;
 `fallback` customizes its pending UI. `errorFallback(error, dismiss)` catches `GlyphFontError` only and rethrows unrelated
 application errors. It does not recover implicitly: repair or reload the failed resource, then call `dismiss()` to retry
@@ -164,7 +166,11 @@ detached snapshots for comparison and requests a frame after applying the update
 - `loadFont`, `createFontLibrary`, `FontLibrary`, and a public font-library subpath are not part of the React or root API.
 
 [^react-adapter]: The adapter defines direct selection suspension, hook caches, provider aliases, selective error handling, and mounted cleanup.
+
 [^react-format-hooks]: The three format leaves delegate to `useFont` while preserving each RasterFormat's option and return types.
+
 [^font-face]: FontFace loading owns canonical source, decoded-format, dependency, retry, and declaration lifetimes.
+
 [^react-contract]: The compile-only contract proves accepted provider entries, hook return inference, and rejected handle props.
+
 [^react-lifecycle]: Integration coverage proves mounted leases survive declaration cleanup and are released at unmount.

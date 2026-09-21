@@ -14,6 +14,7 @@ import { clearBitmap, preloadBitmap, useBitmap } from '@pmndrs/glyph/vue/bitmap'
 
 const fontUrl = new URL('../../../../benches/fixtures/rendering/inter-bitmap-16.font.glb', import.meta.url);
 const multiFormatFontUrl = new URL('../../../../apps/r3f-hello-world/assets/inter-latin.font.glb', import.meta.url);
+const variableFontUrl = new URL('../../../../benches/fixtures/fonts/oxanium-wght/Oxanium[wght].ttf', import.meta.url);
 await glyph.init();
 const vueHandle = glyph.handle('three:vue-lease-tests', ThreeConfig);
 after(() => vueHandle.dispose());
@@ -289,6 +290,46 @@ test('GlyphProvider disposes declarations it creates from source forms', async (
   }
 });
 
+test('GlyphProvider forwards a declared variation and treats a changed instance as a changed declaration', async () => {
+  const input = new Blob([await readFile(multiFormatFontUrl)], { type: 'model/gltf-binary' });
+  const variable = new Blob([await readFile(variableFontUrl)], { type: 'font/ttf' });
+  const created = captureCreatedFontFaces();
+  const fontFaces = (weight) => ({
+    Inter: { src: input, format: msdf },
+    Bold: { src: variable, variation: { axes: { wght: weight } } },
+  });
+  const table = shallowRef(fontFaces(700));
+  const text = capture();
+  let host;
+  try {
+    host = await mountTres(() =>
+      h(GlyphProvider, { handle: vueHandle, fontFaces: table.value }, () =>
+        h(Text, { font: 'Inter', ref: text.ref }, () => 'pinned sibling'),
+      ),
+    );
+    assert.deepEqual(
+      created.calls[1],
+      [variable, { variation: { axes: { wght: 700 } } }],
+      'the provider forwards the declared instance to glyph.fontFace unchanged',
+    );
+    await created.faces[0].load();
+    await settle();
+    assert.ok(text.instance !== undefined);
+    table.value = fontFaces(700);
+    await nextTick();
+    assert.equal(host.errors.length, 0, 'an equal table naming the same instance is the same table');
+    assert.equal(created.faces.length, 2);
+    table.value = fontFaces(400);
+    await nextTick();
+    assert.equal(host.errors.length, 1);
+    assert.match(String(host.errors[0]), /GlyphProvider handle and fontFaces are immutable/);
+  } finally {
+    await host?.unmount();
+    created.restore();
+  }
+  assert.equal(created.faces[1].disposed, true, 'the provider disposes the pinned declaration it created');
+});
+
 test('Text and TextGroup reject a handle prop', async () => {
   const fixture = await loadFixture();
   try {
@@ -472,13 +513,16 @@ test('a rejected preload is shared, releases its declaration, and a later preloa
 function captureCreatedFontFaces() {
   const fontFace = glyph.fontFace;
   const faces = [];
+  const calls = [];
   glyph.fontFace = function capturedFontFace(...args) {
     const face = Reflect.apply(fontFace, glyph, args);
     faces.push(face);
+    calls.push(args);
     return face;
   };
   return {
     faces,
+    calls,
     restore() {
       glyph.fontFace = fontFace;
     },

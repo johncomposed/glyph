@@ -36,9 +36,20 @@ const namedRootProvided = h(GlyphProvider, { handle: three('hud') }, () => label
 const defaultNamedRootProvided = h(GlyphProvider, { handle: 'surface' }, () => labels);
 const declared = h(
   GlyphProvider,
-  { fontFaces: { Inter: '/fonts/Inter.font.glb', Title: { src: '/fonts/Title.font.glb', format: 'slug' } } },
+  {
+    fontFaces: {
+      Inter: '/fonts/Inter.font.glb',
+      Title: { src: '/fonts/Title.font.glb', format: 'slug' },
+      Bold: { src: '/fonts/Oxanium.ttf', variation: { axes: { wght: 700 } } },
+      Display: { src: '/fonts/Oxanium.ttf', format: msdf, variation: { axes: { wght: 700, wdth: 87.5 } } },
+    },
+  },
   () => h(Text, { font: 'Inter' }, () => h(Text, { font: 'Title' }, () => 'Named provider fonts')),
 );
+// @ts-expect-error A provider entry names its axes under `axes`, exactly like `glyph.fontFace`.
+h(GlyphProvider, { fontFaces: { Bold: { src: '/fonts/Oxanium.ttf', variation: { wght: 700 } } } });
+// @ts-expect-error Axis settings are numbers, not CSS keywords.
+h(GlyphProvider, { fontFaces: { Bold: { src: '/fonts/Oxanium.ttf', variation: { axes: { wght: 'bold' } } } } });
 void [flowed, label, selected, selectedFace, provided, aliased, namedRootProvided, defaultNamedRootProvided, declared];
 
 // The template-ref instance exposes the retained Three object with the technique the font selection implies.
