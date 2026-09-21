@@ -76,6 +76,10 @@ This extension does not define text strings, paragraph layout, line breaking, ra
         "descender": -494,
         "lineGap": 0
       },
+      "variation": {
+        "axes": { "wght": 700, "wdth": 100 },
+        "coordinates": [8192, 0]
+      },
       "provenance": {
         "sourceFingerprint": "11111111111111111111111111111111",
         "bakerVersion": "0.1.0",
@@ -111,14 +115,15 @@ This extension does not define text strings, paragraph layout, line breaking, ra
 
 `shaping.bufferView` MUST contain exactly one static, single-face SFNT conforming to profile `opentype-sfnt-harfrust-v0`.
 
-Required tables are `head`, `maxp`, `cmap`, `hhea`, `hmtx`, and `OS/2`. `GDEF`, `GSUB`, `GPOS`, `kern`, `BASE`, `vhea`, `vmtx`, and `VORG` are retained when present. The profile does not fabricate optional tables and excludes outlines, hinting, font-authored raster data, variable-font tables, AAT, Graphite, collections, WOFF, and WOFF2. Retaining vertical-form source data does not enable vertical shaping or paragraph layout.
+Required tables are `head`, `maxp`, `cmap`, `hhea`, `hmtx`, and `OS/2`. `GDEF`, `GSUB`, `GPOS`, `kern`, `BASE`, `vhea`, `vmtx`, `VORG`, `fvar`, `avar`, `HVAR`, `VVAR`, and `MVAR` are retained when present. The profile does not fabricate optional tables and excludes outlines, hinting, outline variation deltas (`gvar`, `cvar`), font-authored raster data, AAT, Graphite, collections, WOFF, and WOFF2. Retaining vertical-form source data does not enable vertical shaping or paragraph layout.
 
 `fontFunctions` preserves the optional glyph-extents query used by HarfRust fallback positioning after outlines are removed. `glyphExtentsBufferView` contains one dense 8-byte `(xMin, yMin, xMax, yMax)` i16 record per glyph. `glyphExtentsAvailabilityBufferView` contains exactly one bit per glyph, rounded up to a byte; a clear bit makes the adapter return no extents and requires a zeroed record. HarfRust 0.12.0 exposes no contour-point callback, so Anchor Format 2 point records are not serialized.
 
 The exact whitelist, metric policy, checksums, and validation rules are normative in the [V0 shaping contract](../../shaping-data-contract.md) while this extension is incubated in `pmndrs/glyph`.
 
 `shaping.fingerprint` is the lowercase 128-bit MurmurHash3 fingerprint over the length-prefixed SFNT, glyph-extents,
-and extents-availability bytes defined by the shaping contract. A companion raster artifact does not repeat it: the
+and extents-availability bytes defined by the shaping contract, followed by the normalized variation coordinates when
+`variation` is present. A companion raster artifact does not repeat it: the
 single `fingerprint` each raster extension carries folds it in along with the source, raster key, kind, version, and
 glyph metrics that must agree. It identifies compatible bake outputs; it is not a cryptographic integrity claim.
 
@@ -126,7 +131,11 @@ glyph metrics that must agree. It identifies compatible bake outputs; it is not 
 
 `metrics.glyphCount` MUST equal `maxp.numGlyphs`; `metrics.unitsPerEm` MUST equal `head.unitsPerEm`; and V0 `glyphIdWidth` MUST be `16`.
 
-When `OS/2.fsSelection.USE_TYPO_METRICS` is set, the serialized line metrics come from the OS/2 typographic fields. Otherwise they come from `hhea`. Serialized metrics are authoritative for consumers and MUST agree with that policy.
+When `OS/2.fsSelection.USE_TYPO_METRICS` is set, the serialized line metrics come from the OS/2 typographic fields. Otherwise they come from `hhea`. For a variable instance the `MVAR` deltas at the recorded coordinates are added to each serialized metric. Serialized metrics are authoritative for consumers and MUST agree with that policy.
+
+### Variation
+
+A font baked from a variable source carries exactly one `variation` object; a static font carries none. `coordinates` holds one normalized F2Dot14 value per `fvar` axis in axis order, and `axes` records the clamped user-space value of every axis keyed by its four-byte tag. Consumers register the coordinates with the shaper and draw outlines at them; they never re-normalize `axes`. A different instance is a different font: the coordinates participate in `shaping.fingerprint`, so companions bind to one instance.
 
 ### Raster directory
 

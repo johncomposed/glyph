@@ -1,5 +1,13 @@
 # pmndrs/glyph documentation update log
 
+## 2026-09-21
+
+- **Pinned variable fonts to one baked instance** — The bake descriptor accepts user-space axis values, the baker
+  records the resolved `PMNDRS_font.variation` instance, and the shaper, extents, line metrics, and every raster read
+  the same normalized coordinates instead of rewriting the source through the subsetter. `fvar`, `avar`, `HVAR`,
+  `VVAR`, and `MVAR` now survive in the shaping payload; a variable source without `HVAR` is rejected. See D-371 in
+  [the decision register](planning/decision-register.md) and the [shaping contract](planning/shaping-data-contract.md).
+
 ## 2026-09-18
 
 - **Added tagged stable publishing alongside canaries** — Extended the existing npm publishing workflow so matching

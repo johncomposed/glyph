@@ -147,7 +147,10 @@ The package owns six runtime layers:
 
 Runtime Rust and all shared Rust code remain `no_std + alloc` compatible with the package allocator contract. The optional
 font-baker Wasm alone enables a feature-gated `std` adapter for Fontations subsetting; the same crate continues to
-pass its `wasm32-unknown-unknown --no-default-features` build. The text engine uses the existing compile-time direct-memory mapping
+pass its `wasm32-unknown-unknown --no-default-features` build. A variable source is pinned to one instance at bake
+time (D-371): the descriptor's user-space axis values normalize once through Skrifa, the artifact records
+`PMNDRS_font.variation`, the shaping payload retains `fvar`/`avar`/`HVAR`/`VVAR`/`MVAR`, and the engine, extents,
+line metrics, and every raster baker read the same normalized coordinates. The subsetter never instances the font. The text engine uses the existing compile-time direct-memory mapping
 for font registrations. Ordinary publication enters once through
 `pmndrs_glyph_engine_update_batch(entriesPointer, count)`, whose entries address the already-written request slice and
 one borrowed result arena for each dirty root. Paragraph-scoped semantic queries remain separate synchronous calls.
