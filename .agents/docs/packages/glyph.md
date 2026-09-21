@@ -5,7 +5,7 @@ description: Implements portable font loading, retained Rust shaping and layout,
 resource: ../../../packages/glyph
 workspace_package: '@pmndrs/glyph'
 documentation_type: reference
-source_digest: 'sha256:b1e9e2ca8a3d1e568c0f7ced70af2d62d6b120605ec1ae0d46e906a31e8bbeab'
+source_digest: 'sha256:3ad8b8ccfb7e71579452e38d03b8bc6051a5bff39bd0dd92407ed1e6895cf7ff'
 tags: [package, public-api, rust, wasm, threejs, typography]
 sources:
   - id: manifest
@@ -450,7 +450,9 @@ runtime-bake support behind the FontFace declaration. A `variation` of user-spac
 source to one static instance (D-371): the declaration forwards it unchanged to the runtime bake descriptor, keys its
 shared load and CacheStorage entry by it, and skips implicit baked-sibling discovery because one sibling holds one
 instance; a `.glb` source, baked Blob, or SerializedFontFace rejects it because a baked artifact already carries its
-instance. Project discovery still bakes one default-instance sibling per source. The face is
+instance. Project discovery still bakes one default-instance sibling per source, and a declaration that pins an
+instance, or whose `variation` is not statically the default instance, is reported as `pinned-font-variation` rather
+than baked, because the runtime would not read that sibling. The face is
 its aggregate/default selection, `.default` aliases
 it, and declared keys such as `.bitmap`, `.msdf`, or `.slug` are distinct inferred format selections. The declaration
 owns loading: `face.load()` loads every authoritative imported format advertised by the main font plus every declared

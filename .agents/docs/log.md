@@ -2,6 +2,11 @@
 
 ## 2026-09-21
 
+- **Reported pinned FontFace variations in project discovery** — A `glyph.fontFace()` declaration that pins a
+  variation instance, or whose `variation` is not statically the default instance, is now a `pinned-font-variation`
+  diagnostic instead of a default-instance sibling bake the pinned face would never read. See
+  [the glyph package reference](packages/glyph.md).
+
 - **Accepted a pinned variation in provider font tables** — React and Vue `GlyphProvider.fontFaces` entries now take
   `{ src, format?, variation? }` and forward the instance to `glyph.fontFace` unchanged. The shared adapter resource key
   includes the normalized instance, so a table naming another instance is a changed declaration, while the `fvar`
