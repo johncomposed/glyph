@@ -85,6 +85,7 @@ describe('public external raster proof', () => {
         source: new Uint8Array(),
         sourceFingerprint: fingerprint.source(new Uint8Array()),
         fontFaceIndex: 0,
+        variationCoordinates: [],
         glyphCount: 5,
         shapingFingerprint: '1'.repeat(32) as Fingerprint,
       },
