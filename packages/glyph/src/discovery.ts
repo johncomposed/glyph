@@ -41,6 +41,7 @@ export interface DiscoveryDiagnostic {
     | 'dynamic-font-source'
     | 'invalid-font-source'
     | 'invalid-raster-options'
+    | 'pinned-font-variation'
     | 'missing-font-source'
     | 'invalid-raster-manifest';
   readonly message: string;
@@ -152,6 +153,8 @@ async function analyzeDefinition(
   const resolvedFile = resolved.resolvedFile;
   const rasters = await resolveFontFaceRasters(configExpression, sources, sourceFile);
   if ('diagnostic' in rasters) return rasters;
+  const pinned = pinnedVariationDiagnostic(configExpression, sources, sourceFile);
+  if (pinned !== undefined) return pinned;
   return {
     fonts: rasters.rasters.map((raster) => ({
       expression,
@@ -175,6 +178,34 @@ function isGlyphFontFaceCall(expression: ast.Node, sources: DiscoverySources): b
     return false;
   const binding = sources.importedBinding(value.object);
   return binding?.module === '@pmndrs/glyph' && binding.exported === 'glyph';
+}
+
+/**
+ * The project bake writes one default-instance sibling per source, and a face that pins an instance bakes it at
+ * runtime without reading that sibling. Baking the sibling for such a declaration would silently disagree with what
+ * the application loads, so the declaration is reported instead of baked. An empty axis map is the default instance.
+ */
+function pinnedVariationDiagnostic(
+  configExpression: ast.Node | undefined,
+  sources: DiscoverySources,
+  sourceFile: DiscoverySource,
+): { diagnostic: DiscoveryDiagnostic } | undefined {
+  if (configExpression === undefined) return undefined;
+  const config = constantExpression(configExpression, sources);
+  if (config.type !== 'ObjectExpression') return undefined;
+  const expression = objectPropertyExpression(config, 'variation');
+  if (expression === undefined) return undefined;
+  const value = staticJson(expression, sources);
+  const axes = isNonArrayObject(value) && isNonArrayObject(value.axes) ? Object.keys(value.axes) : undefined;
+  if (axes !== undefined && axes.length === 0) return undefined;
+  return failure(
+    'pinned-font-variation',
+    axes === undefined
+      ? 'FontFace variation is not a statically visible default instance; a pinned instance bakes at runtime'
+      : `FontFace pins ${axes.join(', ')}; a pinned instance bakes at runtime, and the project bake writes only the default-instance sibling`,
+    sourceFile,
+    sources.text(expression),
+  );
 }
 
 async function resolveFontFaceRasters(

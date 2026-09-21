@@ -697,3 +697,42 @@ test('rejects CommonJS and package-escaping raster baker manifests', async (t) =
   assert.match(report.diagnostics[0].message, /exported ESM subpath|outside its package/);
   assert.match(report.diagnostics[1].message, /exported ESM subpath|outside its package/);
 });
+
+test('a pinned variation is reported instead of baked, while an empty axis map is the default instance', async (t) => {
+  const root = await project();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(join(root, 'public', 'fonts', 'Variable.ttf'), 'font');
+  await writeFile(join(root, 'src', 'instances.ts'), 'export const semibold = { axes: { wght: 700 } } as const\n');
+  await writeFile(
+    join(root, 'src', 'main.ts'),
+    `
+    import { glyph } from '@pmndrs/glyph';
+    import { bitmap } from '@fixture/raster';
+    import { semibold } from './instances.js';
+    declare function pick(): { axes: Record<string, number> };
+    glyph.fontFace('/fonts/Variable.ttf', { format: bitmap({ strikes: [16] }), variation: { axes: {} } });
+    glyph.fontFace('/fonts/Variable.ttf', { format: bitmap({ strikes: [16] }) });
+    glyph.fontFace('/fonts/Variable.ttf', { format: bitmap({ strikes: [16] }), variation: { axes: { wght: 700, wdth: 87.5 } } });
+    glyph.fontFace('/fonts/Variable.ttf', { variation: semibold });
+    glyph.fontFace('/fonts/Variable.ttf', { format: bitmap({ strikes: [16] }), variation: pick() });
+  `,
+  );
+
+  const report = await discoverProjectFonts({ projectRoot: root });
+
+  assert.deepEqual(
+    report.fonts.map(({ raster }) => raster.options),
+    [{ strikes: [16] }, { strikes: [16] }],
+  );
+  assert.deepEqual(
+    report.diagnostics.map(({ code, expression }) => [code, expression]),
+    [
+      ['pinned-font-variation', '{ axes: { wght: 700, wdth: 87.5 } }'],
+      ['pinned-font-variation', 'semibold'],
+      ['pinned-font-variation', 'pick()'],
+    ],
+  );
+  assert.match(report.diagnostics[0].message, /pins wght, wdth; a pinned instance bakes at runtime/);
+  assert.match(report.diagnostics[1].message, /pins wght;/);
+  assert.match(report.diagnostics[2].message, /not a statically visible default instance/);
+});
