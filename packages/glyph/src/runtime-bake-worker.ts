@@ -66,6 +66,7 @@ async function handleMessage(value: RuntimeBakeRequest): Promise<void> {
       fontBaker: core,
       source,
       fontFaceIndex: value.font.fontFaceIndex,
+      ...(value.font.variation === undefined ? {} : { variation: value.font.variation }),
       ...(value.unicodeRanges === undefined ? {} : { unicodeRanges: value.unicodeRanges }),
       rasters,
       onProgress(progress) {

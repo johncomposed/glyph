@@ -95,6 +95,7 @@ test('Bitmap and MSDF runtime bakers execute through lazy module Workers', async
     sourceFingerprint,
     font,
     fontFaceIndex: 0,
+    variationCoordinates: [],
     rasterKey,
     options: { strikes: [16], coverage: { glyphIds: [3, 1] } },
   });
@@ -104,6 +105,7 @@ test('Bitmap and MSDF runtime bakers execute through lazy module Workers', async
     sourceFingerprint,
     font,
     fontFaceIndex: 0,
+    variationCoordinates: [],
     rasterKey,
   });
   const configuredMsdfResult = await runtimeMsdfBaker.default.bake({
@@ -111,6 +113,7 @@ test('Bitmap and MSDF runtime bakers execute through lazy module Workers', async
     sourceFingerprint,
     font,
     fontFaceIndex: 0,
+    variationCoordinates: [],
     rasterKey,
     options: { emSize: 32, pixelRange: 6 },
   });
@@ -211,11 +214,20 @@ test('bounded runtime cancellation replaces the active Worker and recovers the s
     sourceFingerprint,
     font,
     fontFaceIndex: 0,
+    variationCoordinates: [],
     rasterKey,
     options,
     signal: controller.signal,
   });
-  const recovered = baker.bake({ source, sourceFingerprint, font, fontFaceIndex: 0, rasterKey, options });
+  const recovered = baker.bake({
+    source,
+    sourceFingerprint,
+    font,
+    fontFaceIndex: 0,
+    variationCoordinates: [],
+    rasterKey,
+    options,
+  });
   controller.abort(new Error('cancel bounded raster'));
 
   await assert.rejects(cancelled, /cancel bounded raster/);
@@ -286,6 +298,7 @@ test('the raster Worker entry frees its baker result before transferring exact a
       source: Uint8Array.from([1]).buffer,
       sourceFingerprint,
       fontFaceIndex: 0,
+      variationCoordinates: [],
       glyphCount: 1,
       shapingFingerprint,
       rasterKey,
@@ -368,6 +381,7 @@ async function bakeThroughWorker(t, fixture, source) {
       source: source.slice().buffer,
       sourceFingerprint: interSourceFingerprint,
       fontFaceIndex: 0,
+      variationCoordinates: [],
       glyphCount: 2937,
       shapingFingerprint: interShapingFingerprint,
       rasterKey: fixture.rasterKey,

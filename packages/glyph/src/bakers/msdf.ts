@@ -30,6 +30,7 @@ export type MsdfBakerOptions = MsdfOptions | undefined;
 export interface MsdfBakerRequest {
   readonly sourceFingerprint: Fingerprint;
   readonly fontFaceIndex: number;
+  readonly variationCoordinates: readonly number[];
   readonly glyphCount: number;
   readonly shapingFingerprint: Fingerprint;
   readonly rasterKey: RasterKey;
@@ -142,6 +143,7 @@ export function msdfBakerFromCore(core: MsdfBakerCore): RasterBakerModule<'msdf'
         request: {
           sourceFingerprint: request.font.sourceFingerprint,
           fontFaceIndex: request.font.fontFaceIndex,
+          variationCoordinates: request.font.variationCoordinates,
           glyphCount: request.font.glyphCount,
           shapingFingerprint: request.font.shapingFingerprint,
           rasterKey: request.rasterKey,

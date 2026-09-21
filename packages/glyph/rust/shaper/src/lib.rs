@@ -18,7 +18,7 @@ use alloc::vec::Vec;
 use core::cell::Cell;
 use harfrust::{
     BufferClusterLevel, BufferFlags, Direction, Feature, FontRef, GlyphExtents, Language,
-    ShapeOptions, ShapePlan, ShaperData, Tag, UnicodeBuffer,
+    NormalizedCoord, ShapeOptions, ShapePlan, ShaperData, ShaperInstance, Tag, UnicodeBuffer,
     font::{BuiltinFontFuncs, FontFuncs},
 };
 use read_fonts::TableProvider;
@@ -84,9 +84,21 @@ struct RegisteredFont {
     sfnt: Vec<u8>,
     extents: Vec<u8>,
     availability: Vec<u8>,
+    /// Normalized F2Dot14 coordinates in `fvar` axis order; empty for a static font.
+    coordinates: Vec<i16>,
     metrics: FontMetrics,
     data: ShaperData,
+    instance: Option<ShaperInstance>,
     plans: Vec<CachedPlan>,
+}
+
+impl RegisteredFont {
+    fn shaper<'a>(&'a self, font_ref: &FontRef<'a>) -> harfrust::Shaper<'a> {
+        self.data
+            .shaper(font_ref)
+            .instance(self.instance.as_ref())
+            .build()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -112,6 +124,62 @@ pub(crate) fn pack_decoration_metrics(position: i16, value: i16) -> u32 {
 
 fn unpack_decoration_metrics(packed: u32) -> (i16, i16) {
     ((packed >> 16) as u16 as i16, packed as u16 as i16)
+}
+
+/// Little-endian `i16` pairs; an odd byte count cannot be a coordinate block.
+fn decode_coordinates(bytes: &[u8]) -> Option<Vec<i16>> {
+    if !bytes.len().is_multiple_of(2) {
+        return None;
+    }
+    let mut coordinates = Vec::new();
+    coordinates.try_reserve_exact(bytes.len() / 2).ok()?;
+    coordinates.extend(
+        bytes
+            .chunks_exact(2)
+            .map(|pair| i16::from_le_bytes([pair[0], pair[1]])),
+    );
+    Some(coordinates)
+}
+
+/// `MVAR` deltas at one instance. A static font, or one without `MVAR`, applies nothing.
+struct MetricVariation<'a> {
+    mvar: Option<read_fonts::tables::mvar::Mvar<'a>>,
+    coords: Vec<NormalizedCoord>,
+}
+
+impl<'a> MetricVariation<'a> {
+    fn new(font: &FontRef<'a>, coordinates: &[i16]) -> Self {
+        Self {
+            mvar: (!coordinates.is_empty())
+                .then(|| font.mvar().ok())
+                .flatten(),
+            coords: coordinates
+                .iter()
+                .copied()
+                .map(NormalizedCoord::from_bits)
+                .collect(),
+        }
+    }
+
+    /// Whole font units, rounded from the 16.16 delta the variation store yields.
+    fn delta(&self, tag: &[u8; 4]) -> i32 {
+        self.mvar
+            .as_ref()
+            .and_then(|mvar| mvar.metric_delta(Tag::new(tag), &self.coords).ok())
+            .map_or(0, |delta| delta.round().to_i32())
+    }
+
+    fn apply(&self, tag: &[u8; 4], value: i16) -> i16 {
+        i16::try_from(
+            (i32::from(value) + self.delta(tag)).clamp(i32::from(i16::MIN), i32::from(i16::MAX)),
+        )
+        .unwrap_or(value)
+    }
+
+    fn apply_u16(&self, tag: &[u8; 4], value: u16) -> u16 {
+        u16::try_from((i32::from(value) + self.delta(tag)).clamp(0, i32::from(u16::MAX)))
+            .unwrap_or(value)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -189,12 +257,15 @@ impl ShaperRegistry {
             .map_err(|_| STATUS_RESULT_TOO_LARGE)
     }
 
+    /// `coordinates` is the baked instance as little-endian `i16` pairs in `fvar` axis order.
+    #[allow(clippy::too_many_arguments)]
     pub fn register_font(
         &mut self,
         handle: u32,
         sfnt: &[u8],
         extents: &[u8],
         availability: &[u8],
+        coordinates: &[u8],
         underline_packed: u32,
         strikeout_packed: u32,
     ) -> u32 {
@@ -212,6 +283,9 @@ impl ShaperRegistry {
         if !valid_extents(glyph_count, extents, availability) {
             return STATUS_INVALID_EXTENTS;
         }
+        let Some(coordinates) = decode_coordinates(coordinates) else {
+            return STATUS_INVALID_FONT;
+        };
         let (underline_position, underline_thickness) = unpack_decoration_metrics(underline_packed);
         let (strikeout_position, strikeout_size) = unpack_decoration_metrics(strikeout_packed);
         let metrics = match (font.head(), font.hhea()) {
@@ -226,12 +300,14 @@ impl ShaperRegistry {
                     .and_then(|height| u16::try_from(height).ok())
                     .filter(|height| *height != 0)
                     .unwrap_or(fallback_cap_height);
+                // Host-passed decoration metrics already carry `MVAR`; apply it to the payload metrics.
+                let vary = MetricVariation::new(&font, &coordinates);
                 FontMetrics {
                     units_per_em,
-                    ascender: hhea.ascender().to_i16(),
-                    cap_height,
-                    descender: hhea.descender().to_i16(),
-                    line_gap: hhea.line_gap().to_i16(),
+                    ascender: vary.apply(b"hasc", hhea.ascender().to_i16()),
+                    cap_height: vary.apply_u16(b"cpht", cap_height),
+                    descender: vary.apply(b"hdsc", hhea.descender().to_i16()),
+                    line_gap: vary.apply(b"hlgp", hhea.line_gap().to_i16()),
                     underline_position,
                     underline_thickness,
                     strikeout_position,
@@ -246,6 +322,7 @@ impl ShaperRegistry {
                 return if existing.sfnt == sfnt
                     && existing.extents == extents
                     && existing.availability == availability
+                    && existing.coordinates == coordinates
                 {
                     STATUS_OK
                 } else {
@@ -254,6 +331,12 @@ impl ShaperRegistry {
             }
             Err(index) => {
                 let data = ShaperData::new(&font);
+                let instance = (!coordinates.is_empty()).then(|| {
+                    ShaperInstance::from_coords(
+                        &font,
+                        coordinates.iter().copied().map(NormalizedCoord::from_bits),
+                    )
+                });
                 self.font_handles.insert(index, handle);
                 self.fonts.insert(
                     index,
@@ -261,8 +344,10 @@ impl ShaperRegistry {
                         sfnt: sfnt.to_vec(),
                         extents: extents.to_vec(),
                         availability: availability.to_vec(),
+                        coordinates,
                         metrics,
                         data,
+                        instance,
                         plans: Vec::new(),
                     },
                 );
@@ -366,7 +451,12 @@ impl ShaperRegistry {
     pub fn retained_font_bytes(&self) -> u32 {
         self.fonts
             .iter()
-            .map(|font| font.sfnt.len() + font.extents.len() + font.availability.len())
+            .map(|font| {
+                font.sfnt.len()
+                    + font.extents.len()
+                    + font.availability.len()
+                    + font.coordinates.len() * 2
+            })
             .try_fold(0_u32, |total, bytes| {
                 total.checked_add(bytes.try_into().unwrap_or(u32::MAX))
             })
@@ -414,7 +504,7 @@ fn shape_segment(
             return Err(STATUS_INVALID_FONT);
         }
     };
-    let shaper = font.data.shaper(&font_ref).build();
+    let shaper = font.shaper(&font_ref);
     let Some(plan) = font.plans.last().map(|cached| &cached.plan) else {
         *buffer_slot = Some(buffer);
         return Err(STATUS_INVALID_REQUEST);
@@ -462,7 +552,7 @@ fn shape_segment_inner(
         font.plans.push(cached);
     } else {
         let font_ref = FontRef::new(&font.sfnt).map_err(|_| STATUS_INVALID_FONT)?;
-        let shaper = font.data.shaper(&font_ref).build();
+        let shaper = font.shaper(&font_ref);
         let plan = ShapePlan::new(
             &shaper,
             direction,
@@ -786,6 +876,7 @@ mod tests {
                 INTER,
                 &extents,
                 &availability,
+                &[],
                 pack_decoration_metrics(-348, 140),
                 pack_decoration_metrics(671, 140),
             ),
@@ -809,11 +900,11 @@ mod tests {
         let availability = alloc::vec![0u8; glyph_count.div_ceil(8)];
         let mut registry = ShaperRegistry::default();
         assert_eq!(
-            registry.register_font(9, INTER, &extents_a, &availability, 0, 0),
+            registry.register_font(9, INTER, &extents_a, &availability, &[], 0, 0),
             STATUS_OK
         );
         assert_eq!(
-            registry.register_font(3, INTER, &extents_b, &availability, 0, 0),
+            registry.register_font(3, INTER, &extents_b, &availability, &[], 0, 0),
             STATUS_OK
         );
         // Alternating queries exercise the memo's miss path; the same handle twice
@@ -830,7 +921,7 @@ mod tests {
         assert_eq!(registry.glyph_count(9), Some(glyph_count as u32));
         // Re-registering a lower handle shifts index assignments again.
         assert_eq!(
-            registry.register_font(2, INTER, &extents_b, &availability, 0, 0),
+            registry.register_font(2, INTER, &extents_b, &availability, &[], 0, 0),
             STATUS_OK
         );
         assert!(registry.font_metrics(2).is_some());
@@ -845,11 +936,11 @@ mod tests {
     fn registration_rejects_invalid_payloads_and_disposes_owned_state() {
         let mut registry = ShaperRegistry::default();
         assert_eq!(
-            registry.register_font(0, &[], &[], &[], 0, 0),
+            registry.register_font(0, &[], &[], &[], &[], 0, 0),
             STATUS_INVALID_HANDLE
         );
         assert_eq!(
-            registry.register_font(1, &[], &[], &[], 0, 0),
+            registry.register_font(1, &[], &[], &[], &[], 0, 0),
             STATUS_INVALID_FONT
         );
         assert_eq!(registry.font_count(), 0);

@@ -1,4 +1,4 @@
-import type { FontBakeDescriptor, SerializedBakeError } from '../font-baker/index.js';
+import type { FontBakeDescriptor, FontVariationRequest, SerializedBakeError } from '../font-baker/index.js';
 import type { Fingerprint, RasterKey } from '../identity.js';
 import type { JsonValue } from '../raster.js';
 import { isFingerprint } from './fingerprint.js';
@@ -87,6 +87,7 @@ export function isRuntimeBakeRequest(value: unknown): value is RuntimeBakeReques
     typeof value.font.fontFaceIndex === 'number' &&
     Number.isSafeInteger(value.font.fontFaceIndex) &&
     value.font.fontFaceIndex >= 0 &&
+    (value.font.variation === undefined || isVariationRequest(value.font.variation)) &&
     (value.cache === undefined ||
       (isNonArrayObject(value.cache) &&
         Number.isSafeInteger(value.cache.expiresAt) &&
@@ -161,4 +162,12 @@ function isRequestId(value: unknown): value is number {
 
 function isNonArrayObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isVariationRequest(value: unknown): value is FontVariationRequest {
+  return (
+    isNonArrayObject(value) &&
+    isNonArrayObject(value.axes) &&
+    Object.values(value.axes).every((axis) => typeof axis === 'number' && Number.isFinite(axis))
+  );
 }

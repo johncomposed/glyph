@@ -27,6 +27,7 @@ fn arbitrary_font_bytes_fail_safely_and_deterministically() {
                 pmndrs_glyph_raster_artifact::SOURCE_FINGERPRINT_V0,
             ),
             font_face_index: random.next(),
+            variation_coordinates: Vec::new(),
             glyph_count: 1,
             shaping_fingerprint: "0".repeat(32),
             raster_key: raster_key.clone(),

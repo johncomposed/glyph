@@ -45,6 +45,7 @@ export function createCache(storage: CacheStorage, origin: string, now: () => nu
     key(sourceFingerprint, request) {
       const identity = canonicalJson({
         face: request.font.fontFaceIndex,
+        variation: request.font.variation?.axes ?? null,
         rasters: request.rasters ?? [],
         sourceFingerprint,
         unicodeRanges: request.unicodeRanges ?? null,

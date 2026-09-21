@@ -241,3 +241,50 @@ test('the authenticated Noto CJK fixture retains the closed shaping profile at t
     "the validated GLB's reduced SFNT must preserve every pinned HarfRust CJK glyph field",
   );
 });
+
+test('the Oxanium variable fixture bakes one pinned instance that shapes like HarfBuzz at that instance', async (t) => {
+  const directory = new URL('../../../../../benches/fixtures/fonts/oxanium-wght/', import.meta.url);
+  const casesDirectory = new URL('../../../../../benches/fixtures/shaping/oxanium-semibold/', import.meta.url);
+  const [wasm, source, manifestSource, expectedOracleSource] = await Promise.all([
+    readFile(new URL('../../../dist/font-baker.wasm', import.meta.url)),
+    readFile(new URL('Oxanium[wght].ttf', directory)),
+    readFile(new URL('manifest.json', directory), 'utf8'),
+    readFile(new URL('harfrust.json', casesDirectory), 'utf8'),
+  ]);
+  const manifest = JSON.parse(manifestSource);
+  assert.equal(source.byteLength, manifest.source.fontBytes);
+  assert.equal(createHash('sha256').update(source).digest('hex'), manifest.source.fontSha256);
+  assert.deepEqual(manifest.face.variations, { wght: 700 });
+
+  const baker = await createFontBaker(wasm);
+  const descriptor = { formatVersion: 0, fontFaceIndex: 0, variation: { axes: manifest.face.variations } };
+  const first = baker.bake({ source, descriptor });
+  const second = baker.bake({ source, descriptor });
+  const artifact = first.artifacts[0];
+  const expected = manifest.bake.expectedCore;
+  assert.equal(artifact.bytes.byteLength, expected.artifactBytes);
+  assert.equal(artifact.fingerprint, expected.artifactFingerprint);
+  assert.equal(createHash('sha256').update(artifact.bytes).digest('hex'), expected.artifactSha256);
+  assert.deepEqual(artifact.bytes, second.artifacts[0].bytes);
+  assert.deepEqual(first.report.shared.shaping.tables, expected.tables);
+
+  const inspected = await validateFontArtifact(artifact.bytes);
+  const extension = inspected.document.extensions.PMNDRS_font;
+  assert.equal(inspected.shapingSfnt.byteLength, expected.shapingSfntBytes);
+  assert.equal(extension.shaping.fingerprint, expected.shapingFingerprint);
+  assert.deepEqual(extension.variation, manifest.bake.expectedVariation);
+  assert.equal(extension.provenance.sourceFingerprint, manifest.source.fontFingerprint);
+
+  const defaultInstance = baker.bake({ source, descriptor: { formatVersion: 0, fontFaceIndex: 0 } });
+  const defaultExtension = (await validateFontArtifact(defaultInstance.artifacts[0].bytes)).document.extensions
+    .PMNDRS_font;
+  assert.deepEqual(defaultExtension.variation, { axes: { wght: 200 }, coordinates: [0] });
+  assert.notEqual(defaultExtension.shaping.fingerprint, extension.shaping.fingerprint);
+  assert.deepEqual(defaultInstance.report.shared.shaping.tables, expected.tables);
+
+  assert.deepEqual(
+    await shapeReducedFont(t, inspected.shapingSfnt, 'Oxanium.shaping.ttf', casesDirectory),
+    JSON.parse(expectedOracleSource),
+    'the reduced SFNT, with gvar removed, must still shape at wght=700 exactly like the source font',
+  );
+});

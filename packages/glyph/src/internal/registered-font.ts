@@ -51,6 +51,8 @@ export interface RegisteredFontData {
   readonly shapingSfnt: Uint8Array;
   readonly glyphExtents: Uint8Array;
   readonly glyphExtentsAvailability: Uint8Array;
+  /** Normalized F2Dot14 coordinates the shaping payload is pinned to; empty for a static font. */
+  readonly variationCoordinates: readonly number[];
   readonly rasterSources: Map<string, RegisteredRasterSourceData>;
   /** Authenticated external resources shared by every raster through canonical content identity. */
   readonly resources: Map<string, RegisteredRasterResourceData>;

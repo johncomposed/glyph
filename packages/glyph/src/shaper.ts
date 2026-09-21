@@ -52,6 +52,8 @@ interface ShaperExports {
     extentsLength: number,
     availabilityPointer: number,
     availabilityLength: number,
+    coordinatesPointer: number,
+    coordinatesLength: number,
     underlinePacked: number,
     strikeoutPacked: number,
   ) => number;
@@ -154,6 +156,7 @@ class RuntimeShaperImpl implements RuntimeShaper {
       data.shapingSfnt,
       data.glyphExtents,
       data.glyphExtentsAvailability,
+      encodeVariationCoordinates(data.variationCoordinates),
       packDecorationMetrics(font.metrics.underlinePosition, font.metrics.underlineThickness),
       packDecorationMetrics(font.metrics.strikeoutPosition, font.metrics.strikeoutSize),
     );
@@ -165,16 +168,19 @@ class RuntimeShaperImpl implements RuntimeShaper {
     shapingSfnt: Uint8Array,
     glyphExtents: Uint8Array,
     glyphExtentsAvailability: Uint8Array,
+    variationCoordinates: Uint8Array,
     underlinePacked: number,
     strikeoutPacked: number,
   ): void {
     let sfnt: { readonly pointer: number; readonly length: number } | undefined;
     let extents: { readonly pointer: number; readonly length: number } | undefined;
     let availability: { readonly pointer: number; readonly length: number } | undefined;
+    let coordinates: { readonly pointer: number; readonly length: number } | undefined;
     try {
       sfnt = copyIntoWasm(this.#exports, shapingSfnt);
       extents = copyIntoWasm(this.#exports, glyphExtents);
       availability = copyIntoWasm(this.#exports, glyphExtentsAvailability);
+      coordinates = copyIntoWasm(this.#exports, variationCoordinates);
       const status = this.#exports.registerFont(
         handle,
         sfnt.pointer,
@@ -183,11 +189,16 @@ class RuntimeShaperImpl implements RuntimeShaper {
         extents.length,
         availability.pointer,
         availability.length,
+        coordinates.pointer,
+        coordinates.length,
         underlinePacked,
         strikeoutPacked,
       );
       if (status !== 0) throw shaperStatusError(status, 'register font');
     } finally {
+      if (coordinates !== undefined) {
+        this.#exports.deallocate(coordinates.pointer, coordinates.length);
+      }
       if (availability !== undefined) {
         this.#exports.deallocate(availability.pointer, availability.length);
       }
@@ -348,4 +359,12 @@ function shaperStatusError(status: number, action: string): Error {
     14: 'font is retained by a registered font stack',
   };
   return new Error(`text shaper could not ${action}: ${labels[status] ?? `status ${status}`}`);
+}
+
+/** The engine reads the baked instance as little-endian `i16` pairs in `fvar` axis order. */
+function encodeVariationCoordinates(coordinates: readonly number[]): Uint8Array {
+  const bytes = new Uint8Array(coordinates.length * 2);
+  const view = new DataView(bytes.buffer);
+  coordinates.forEach((coordinate, index) => view.setInt16(index * 2, coordinate, true));
+  return bytes;
 }

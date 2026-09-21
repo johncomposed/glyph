@@ -155,8 +155,16 @@ glyph.fontFace(new Uint8Array());
 glyph.fontFace(new Request('/fonts/Inter.font.glb'));
 // @ts-expect-error Raw buffers have no ownership contract; wrap bytes in a Blob or SerializedFontFace.
 glyph.fontFace(new ArrayBuffer(0));
-// @ts-expect-error FontFace config accepts only family and format.
+// @ts-expect-error FontFace config accepts only family, format, and variation.
 glyph.fontFace('/fonts/Inter.font.glb', { src: '/fonts/Other.font.glb' });
+glyph.fontFace('/fonts/Oxanium.ttf', {
+  variation: { axes: { wght: 700 } },
+}) satisfies import('../../src/index.js').FontFace<never>;
+glyph.fontFace('/fonts/Oxanium.ttf', { format: 'slug', variation: { axes: { wght: 700, wdth: 87.5 } } });
+// @ts-expect-error A variation names its axes under `axes`, mirroring the bake descriptor.
+glyph.fontFace('/fonts/Oxanium.ttf', { variation: { wght: 700 } });
+// @ts-expect-error Axis settings are numbers, not CSS keywords.
+glyph.fontFace('/fonts/Oxanium.ttf', { variation: { axes: { wght: 'bold' } } });
 declare const transferred: SerializedFontFace;
 glyph.fontFace(transferred) satisfies import('../../src/index.js').FontFace<never>;
 three.createText({ font: inter.slug, text: 'Loaded before construction' }) satisfies import('../../src/three.js').Text<

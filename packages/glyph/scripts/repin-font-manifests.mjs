@@ -43,9 +43,14 @@ for (const entry of (await readdir(fontsDirectory, { withFileTypes: true })).fil
   if (fontFile === undefined) continue;
 
   const source = await readFile(new URL(fontFile, directory));
+  const axes = manifest.face?.variations ?? {};
   const { artifacts } = baker.bake({
     source,
-    descriptor: { formatVersion: 0, fontFaceIndex: manifest.face?.fontIndex ?? 0 },
+    descriptor: {
+      formatVersion: 0,
+      fontFaceIndex: manifest.face?.fontIndex ?? 0,
+      ...(Object.keys(axes).length === 0 ? {} : { variation: { axes } }),
+    },
   });
   const artifact = artifacts[0];
   const produced = {

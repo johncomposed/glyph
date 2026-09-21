@@ -141,6 +141,33 @@
         "strikeoutSize"
       ]
     },
+    "variation": {
+      "type": "object",
+      "description": "The fixed variation instance this font was baked at. Present only for a variable source.",
+      "properties": {
+        "axes": {
+          "type": "object",
+          "description": "Clamped user-space value of every fvar axis, keyed by four-byte tag.",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "coordinates": {
+          "type": "array",
+          "description": "Normalized F2Dot14 bit patterns in fvar axis order.",
+          "items": {
+            "type": "integer",
+            "minimum": -32768,
+            "maximum": 32767
+          }
+        }
+      },
+      "required": [
+        "axes",
+        "coordinates"
+      ],
+      "additionalProperties": false
+    },
     "provenance": {
       "type": "object",
       "allOf": [

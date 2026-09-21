@@ -41,6 +41,7 @@ async function handleMessage<Kind extends string, Options, Descriptor extends Js
         source: new Uint8Array(request.source),
         sourceFingerprint: request.sourceFingerprint,
         fontFaceIndex: request.fontFaceIndex,
+        variationCoordinates: request.variationCoordinates,
         glyphCount: request.glyphCount,
         shapingFingerprint: request.shapingFingerprint,
       },

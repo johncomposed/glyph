@@ -27,6 +27,7 @@ export type SlugBakerOptions = SlugOptions | undefined;
 export interface SlugBakerRequest {
   readonly sourceFingerprint: Fingerprint;
   readonly fontFaceIndex: number;
+  readonly variationCoordinates: readonly number[];
   readonly glyphCount: number;
   readonly shapingFingerprint: Fingerprint;
   readonly rasterKey: RasterKey;
@@ -113,6 +114,7 @@ export function slugBakerFromCore(
         request: {
           sourceFingerprint: request.font.sourceFingerprint,
           fontFaceIndex: request.font.fontFaceIndex,
+          variationCoordinates: request.font.variationCoordinates,
           glyphCount: request.font.glyphCount,
           shapingFingerprint: request.font.shapingFingerprint,
           rasterKey: request.rasterKey,

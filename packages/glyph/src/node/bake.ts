@@ -9,6 +9,7 @@ import {
   FONT_BAKER_VERSION,
   type FontBakeDescriptor,
   type FontInspection,
+  type FontVariationRequest,
   type PreparedFontReport,
   type UnicodeRange,
 } from '../font-baker/index.js';
@@ -45,7 +46,8 @@ import type {
   DiscoveryOptions,
   ResolvedRasterBaker,
 } from '../discovery.js';
-import { fontBakeDescriptor } from '../internal/core-bake-policy.js';
+import { fontBakeDescriptor, soleCoreFontArtifact } from '../internal/core-bake-policy.js';
+import { readRuntimeFontArtifact } from '../internal/font-artifact-reader.js';
 import { bakeFontPipeline } from '../internal/font-bake-pipeline.js';
 import { NodeBakeError } from '../internal/node-bake-error.js';
 import { assertDistinctInputOutputs, publishFilesWithRollback } from '../internal/node-file-publication.js';
@@ -187,6 +189,7 @@ async function bakeFontWithResolvedPlans<const Rasters extends readonly object[]
     fontBaker,
     source: originalSource,
     fontFaceIndex: options.font.fontFaceIndex,
+    ...(options.font.variation === undefined ? {} : { variation: options.font.variation }),
     ...(options.unicodeRanges === undefined ? {} : { unicodeRanges: options.unicodeRanges }),
     rasters,
     validateArtifact: validateFontArtifact,
@@ -463,6 +466,7 @@ export async function fontIsUpToDate(request: {
   readonly output: string;
   readonly input: string;
   readonly fontFaceIndex: number;
+  readonly variation?: FontVariationRequest;
   readonly unicodeRanges?: readonly UnicodeRange[];
   readonly rasters: readonly { readonly rasterKey: string; readonly kind: string; readonly version: number }[];
   /** A split bake writes companions beside the core, so the same rasters are a different result. */
@@ -506,6 +510,21 @@ export async function fontIsUpToDate(request: {
   }
   if (font.provenance?.bakerVersion !== FONT_BAKER_VERSION) {
     return { fresh: false, reason: 'a different core baker produced this font' };
+  }
+  // The source fingerprint cannot see the pinned instance; the shaping fingerprint folds the coordinates in.
+  if (request.variation !== undefined || font.variation !== undefined) {
+    const baker = await defaultFontBaker();
+    const core = baker.bake({
+      source: baked,
+      descriptor: fontBakeDescriptor(
+        request.unicodeRanges === undefined ? request.fontFaceIndex : 0,
+        request.variation,
+      ),
+    });
+    const expected = readRuntimeFontArtifact(soleCoreFontArtifact(core).bytes).shapingFingerprint;
+    if (String((font.shaping ?? {}).fingerprint) !== expected) {
+      return { fresh: false, reason: 'the variation instance changed' };
+    }
   }
 
   // Raster keys describe requests; carried fingerprints also prove the written format.

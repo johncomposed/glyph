@@ -18,7 +18,7 @@ interface Glyph {
 
 interface Oracle {
   engine: { name: string; version: string };
-  cases: { id: string; glyphs: Glyph[] }[];
+  cases: { id: string; segment?: { variations?: string[] }; glyphs: Glyph[] }[];
 }
 
 interface FixtureMapping {
@@ -104,6 +104,40 @@ describe('canonical Amiri fixtures', () => {
     expect(harfrust.engine).toMatchObject({ name: 'HarfRust', version: '0.12.0' });
     expect(harfbuzz.engine).toMatchObject({ name: 'HarfBuzz', version: '13.0.0' });
     expect(harfrust.cases.map(({ id }) => id)).toEqual(['arabic-joining', 'lam-alef', 'arabic-numbers', 'latin']);
+    expect(harfrust.cases).toEqual(harfbuzz.cases);
+  });
+});
+
+describe('canonical Oxanium variable fixture', () => {
+  it('binds the pinned wght=700 instance to its manifest and matches HarfBuzz 13 at that instance', async () => {
+    const directory = new URL('fonts/oxanium-wght/', fixtureRoot);
+    const [manifestSource, font, license] = await Promise.all([
+      readFile(new URL('manifest.json', directory), 'utf8'),
+      readFile(new URL('Oxanium[wght].ttf', directory)),
+      readFile(new URL('OFL.txt', directory)),
+    ]);
+    const manifest = JSON.parse(manifestSource);
+    expect(manifest).toMatchObject({
+      id: 'oxanium-semibold-v0',
+      face: { fontIndex: 0, variations: { wght: 700 }, glyphCount: 375 },
+      bake: { expectedVariation: { axes: { wght: 700 }, coordinates: [12489] } },
+    });
+    expect(font.byteLength).toBe(manifest.source.fontBytes);
+    expect(createHash('sha256').update(font).digest('hex')).toBe(manifest.source.fontSha256);
+    expect(createHash('sha256').update(license).digest('hex')).toBe(manifest.source.licenseSha256);
+
+    const shaping = new URL('shaping/oxanium-semibold/', fixtureRoot);
+    const [harfrust, harfbuzz] = (await Promise.all(
+      ['harfrust.json', 'harfbuzz.json'].map(async (name) =>
+        JSON.parse(await readFile(new URL(name, shaping), 'utf8')),
+      ),
+    )) as [Oracle, Oracle];
+    expect(harfrust.engine).toMatchObject({ name: 'HarfRust', version: '0.12.0' });
+    expect(harfbuzz.engine).toMatchObject({ name: 'HarfBuzz', version: '13.0.0' });
+    expect(harfrust.cases.map(({ id }) => id)).toEqual(['paragraph', 'digits-punctuation', 'uppercase-kerning']);
+    for (const shaped of harfbuzz.cases) {
+      expect(shaped.segment?.variations).toEqual(['wght=700']);
+    }
     expect(harfrust.cases).toEqual(harfbuzz.cases);
   });
 });

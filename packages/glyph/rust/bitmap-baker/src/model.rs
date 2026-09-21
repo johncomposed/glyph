@@ -70,6 +70,9 @@ pub struct BitmapPackagingV0 {
 pub struct BitmapBakeRequestV0 {
     pub source_fingerprint: String,
     pub font_face_index: u32,
+    /// Normalized F2Dot14 coordinates in `fvar` axis order; empty for a static font.
+    #[serde(default)]
+    pub variation_coordinates: Vec<i16>,
     pub glyph_count: u16,
     pub shaping_fingerprint: String,
     pub raster_key: String,

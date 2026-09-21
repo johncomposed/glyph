@@ -11,6 +11,7 @@ const runtimeBaker: RuntimeRasterBakerModule<typeof GLYPH_EXAMPLE_KIND, GlyphExa
         source: request.source,
         sourceFingerprint: request.sourceFingerprint,
         fontFaceIndex: request.fontFaceIndex,
+        variationCoordinates: request.variationCoordinates,
         glyphCount: request.font.glyphCount,
         shapingFingerprint: request.font.shapingFingerprint,
       },

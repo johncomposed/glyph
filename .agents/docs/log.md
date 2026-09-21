@@ -1,5 +1,28 @@
 # pmndrs/glyph documentation update log
 
+## 2026-09-21
+
+- **Accepted a pinned variation in provider font tables** — React and Vue `GlyphProvider.fontFaces` entries now take
+  `{ src, format?, variation? }` and forward the instance to `glyph.fontFace` unchanged. The shared adapter resource key
+  includes the normalized instance, so a table naming another instance is a changed declaration, while the `fvar`
+  default and an omitted variation remain one identity. See [the glyph package reference](packages/glyph.md).
+
+- **Forwarded FontFace variation to runtime baking** — `glyph.fontFace(source, { variation })` and the loader's
+  source override now carry user-space axis values to the Worker bake descriptor, key shared loads and CacheStorage
+  entries by the instance, and skip implicit baked-sibling discovery for a pinned instance; baked artifacts and
+  transferred faces reject the option. See [the glyph package reference](packages/glyph.md).
+
+- **Pinned variable fonts to one baked instance** — The bake descriptor accepts user-space axis values, the baker
+  records the resolved `PMNDRS_font.variation` instance, and the shaper, extents, line metrics, and every raster read
+  the same normalized coordinates instead of rewriting the source through the subsetter. `fvar`, `avar`, `HVAR`,
+  `VVAR`, and `MVAR` now survive in the shaping payload; a variable source without `HVAR` is rejected. See D-371 in
+  [the decision register](planning/decision-register.md) and the [shaping contract](planning/shaping-data-contract.md).
+
+- **Pinned Oxanium as the variable-font fixture** — Added the authenticated Google Fonts Oxanium `wght` source from
+  issue #99 with a manifest pinned at `wght=700`, a shaping corpus whose oracles carry axis settings, and end-to-end
+  proof that the reduced payload without `gvar` shapes exactly like HarfBuzz 13 and HarfRust at that instance. Both
+  oracle generators and the manifest re-pin now honor variation settings. See [the benchmark reference](packages/benchmarks.md).
+
 ## 2026-09-18
 
 - **Added tagged stable publishing alongside canaries** — Extended the existing npm publishing workflow so matching

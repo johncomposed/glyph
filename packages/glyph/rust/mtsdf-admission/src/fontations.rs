@@ -4,7 +4,7 @@ use pmndrs_glyph_mtsdf_core::MtsdfGenerator;
 pub use pmndrs_glyph_mtsdf_fontations::{
     FontationsOutlineSource, font_outline_source, glyph_count,
 };
-use skrifa::{FontRef, GlyphId};
+use skrifa::{FontRef, GlyphId, instance::LocationRef};
 
 use crate::{REGION, fnv1a};
 
@@ -29,7 +29,7 @@ pub fn measure_font_pass(
     let mut checksum = 2_166_136_261_u32;
     for raw_glyph_id in 0..glyph_count {
         let glyph_id = GlyphId::new(u32::from(raw_glyph_id));
-        let Some(source) = font_outline_source(&font, glyph_id) else {
+        let Some(source) = font_outline_source(&font, glyph_id, LocationRef::default()) else {
             skipped_glyphs += 1;
             continue;
         };

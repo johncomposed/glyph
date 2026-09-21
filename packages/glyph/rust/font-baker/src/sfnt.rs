@@ -5,10 +5,11 @@ use read_fonts::{
 };
 use skrifa::{
     MetadataProvider,
-    instance::{LocationRef, Size},
+    instance::{LocationRef, NormalizedCoord, Size},
 };
 use std::{
     borrow::ToOwned,
+    collections::BTreeMap,
     string::{String, ToString},
     vec::Vec,
 };
@@ -18,7 +19,10 @@ use core_maths::CoreFloat;
 
 use crate::{
     error::{BakeError, BakeErrorCode},
-    report::{FontMetricsV0, ShapingPayloadReportV0, TablePayloadReport, compressed_lengths},
+    report::{
+        FontMetricsV0, ShapingPayloadReportV0, TablePayloadReport, VariationRequestV0, VariationV0,
+        compressed_lengths,
+    },
 };
 
 const REQUIRED_TABLES: [Tag; 6] = [
@@ -29,7 +33,8 @@ const REQUIRED_TABLES: [Tag; 6] = [
     Tag::new(b"hmtx"),
     Tag::new(b"OS/2"),
 ];
-const OPTIONAL_TABLES: [Tag; 8] = [
+// `fvar`/`avar`/`HVAR`/`VVAR`/`MVAR` stay for the shaper; `gvar`/`cvar` leave with the outlines.
+const OPTIONAL_TABLES: [Tag; 13] = [
     Tag::new(b"BASE"),
     Tag::new(b"GDEF"),
     Tag::new(b"GSUB"),
@@ -38,12 +43,8 @@ const OPTIONAL_TABLES: [Tag; 8] = [
     Tag::new(b"kern"),
     Tag::new(b"vhea"),
     Tag::new(b"vmtx"),
-];
-const VARIABLE_TABLES: [Tag; 7] = [
     Tag::new(b"fvar"),
     Tag::new(b"avar"),
-    Tag::new(b"gvar"),
-    Tag::new(b"cvar"),
     Tag::new(b"HVAR"),
     Tag::new(b"VVAR"),
     Tag::new(b"MVAR"),
@@ -66,12 +67,20 @@ pub(crate) struct ShapingPayload {
     pub extents_availability: Vec<u8>,
     pub shaping_fingerprint: String,
     pub metrics: FontMetricsV0,
+    pub variation: Option<VariationV0>,
     pub report: ShapingPayloadReportV0,
+}
+
+/// The instance a variable source is baked at: its report plus the coordinates Skrifa reads.
+struct ResolvedVariation {
+    report: VariationV0,
+    coords: Vec<NormalizedCoord>,
 }
 
 pub(crate) fn build_shaping_payload(
     source: &[u8],
     face_index: u32,
+    variation: Option<&VariationRequestV0>,
 ) -> Result<ShapingPayload, BakeError> {
     reject_envelope(source)?;
     let font = FontRef::from_index(source, face_index).map_err(|error| {
@@ -83,14 +92,14 @@ pub(crate) fn build_shaping_payload(
 
     reject_tables(
         &font,
-        &VARIABLE_TABLES,
-        BakeErrorCode::UnsupportedVariableFont,
-    )?;
-    reject_tables(
-        &font,
         &UNSUPPORTED_SHAPING_TABLES,
         BakeErrorCode::UnsupportedShapingSystem,
     )?;
+    let variation = resolve_variation(&font, variation)?;
+    let coords = variation
+        .as_ref()
+        .map_or(&[][..], |value| &value.coords[..]);
+    let location = LocationRef::new(coords);
 
     let head = font.head().map_err(|_| missing("head"))?;
     let maxp = font.maxp().map_err(|_| missing("maxp"))?;
@@ -133,34 +142,57 @@ pub(crate) fn build_shaping_payload(
             i16::try_from(units_per_em / 14).unwrap_or(i16::MAX).max(1),
         ),
     };
+    // `MVAR` deltas apply to whichever metric source the flag selected, matching Skrifa and HarfBuzz.
+    let mvar = font.mvar().ok();
+    let vary = |tag: &[u8; 4], value: i16| -> i16 {
+        let delta = mvar
+            .as_ref()
+            .and_then(|mvar| mvar.metric_delta(Tag::new(tag), coords).ok())
+            .map_or(0, |delta| delta.round().to_i32());
+        i16::try_from((i32::from(value) + delta).clamp(i32::from(i16::MIN), i32::from(i16::MAX)))
+            .unwrap_or(value)
+    };
     let metrics = FontMetricsV0 {
         glyph_count,
         glyph_id_width: 16,
         units_per_em,
-        ascender: if use_typo {
-            os2.s_typo_ascender()
-        } else {
-            hhea.ascender().to_i16()
-        },
-        descender: if use_typo {
-            os2.s_typo_descender()
-        } else {
-            hhea.descender().to_i16()
-        },
-        line_gap: if use_typo {
-            os2.s_typo_line_gap()
-        } else {
-            hhea.line_gap().to_i16()
-        },
-        underline_position,
-        underline_thickness,
-        strikeout_position: os2.y_strikeout_position(),
-        strikeout_size: os2.y_strikeout_size(),
+        ascender: vary(
+            b"hasc",
+            if use_typo {
+                os2.s_typo_ascender()
+            } else {
+                hhea.ascender().to_i16()
+            },
+        ),
+        descender: vary(
+            b"hdsc",
+            if use_typo {
+                os2.s_typo_descender()
+            } else {
+                hhea.descender().to_i16()
+            },
+        ),
+        line_gap: vary(
+            b"hlgp",
+            if use_typo {
+                os2.s_typo_line_gap()
+            } else {
+                hhea.line_gap().to_i16()
+            },
+        ),
+        underline_position: vary(b"undo", underline_position),
+        underline_thickness: vary(b"unds", underline_thickness),
+        strikeout_position: vary(b"stro", os2.y_strikeout_position()),
+        strikeout_size: vary(b"strs", os2.y_strikeout_size()),
     };
 
     let (sfnt, tables) = rebuild_sfnt(&font)?;
-    let (extents, extents_availability) = collect_extents(&font, glyph_count)?;
-    let shaping_fingerprint = shaping_fingerprint(&sfnt, &extents, &extents_availability)?;
+    let (extents, extents_availability) = collect_extents(&font, glyph_count, location)?;
+    let coordinate_bits = variation
+        .as_ref()
+        .map_or(&[][..], |value| &value.report.coordinates[..]);
+    let shaping_fingerprint =
+        shaping_fingerprint(&sfnt, &extents, &extents_availability, coordinate_bits)?;
     let compressed = compressed_lengths(&sfnt)?;
     let total_raw_bytes = sfnt
         .len()
@@ -174,6 +206,7 @@ pub(crate) fn build_shaping_payload(
         extents_availability,
         shaping_fingerprint,
         metrics,
+        variation: variation.map(|value| value.report),
         report: ShapingPayloadReportV0 {
             format: "opentype-sfnt-harfrust-v0".to_owned(),
             sfnt_directory_bytes: 12 + 16 * tables.len(),
@@ -201,6 +234,88 @@ fn reject_envelope(source: &[u8]) -> Result<(), BakeError> {
         ));
     }
     Ok(())
+}
+
+/// Pin a variable source to one instance; `HVAR` is required since `gvar` leaves with the outlines.
+fn resolve_variation(
+    font: &FontRef<'_>,
+    request: Option<&VariationRequestV0>,
+) -> Result<Option<ResolvedVariation>, BakeError> {
+    let axes = font.axes();
+    let no_axes = BTreeMap::new();
+    let requested = request.map_or(&no_axes, |request| &request.axes);
+    if axes.is_empty() {
+        if requested.is_empty() {
+            return Ok(None);
+        }
+        return Err(BakeError::new(
+            BakeErrorCode::InvalidDescriptor,
+            "variation axes were requested for a font without variation axes",
+        ));
+    }
+    if font.table_data(Tag::new(b"HVAR")).is_none() {
+        return Err(BakeError::new(
+            BakeErrorCode::UnsupportedVariableFont,
+            "variable font has no HVAR table; the shaping payload cannot vary advances without it",
+        ));
+    }
+
+    let mut settings = Vec::new();
+    settings
+        .try_reserve_exact(requested.len())
+        .map_err(|_| overflow())?;
+    for (name, value) in requested {
+        let tag = axis_tag(name)?;
+        if axes.get_by_tag(tag).is_none() {
+            return Err(BakeError::new(
+                BakeErrorCode::InvalidDescriptor,
+                format!("font has no variation axis {name}"),
+            ));
+        }
+        if !value.is_finite() {
+            return Err(BakeError::new(
+                BakeErrorCode::InvalidDescriptor,
+                format!("variation axis {name} must be a finite value"),
+            ));
+        }
+        settings.push((tag, *value));
+    }
+    let location = axes.location(settings.iter().copied());
+    let coords = location.coords().to_vec();
+    let mut user_axes = BTreeMap::new();
+    for axis in axes.iter() {
+        let value = settings
+            .iter()
+            .find(|(tag, _)| *tag == axis.tag())
+            .map_or(axis.default_value(), |(_, value)| {
+                value.clamp(axis.min_value(), axis.max_value())
+            });
+        user_axes.insert(axis.tag().to_string(), value);
+    }
+    Ok(Some(ResolvedVariation {
+        report: VariationV0 {
+            axes: user_axes,
+            coordinates: coords.iter().map(|coord| coord.to_bits()).collect(),
+        },
+        coords,
+    }))
+}
+
+fn axis_tag(name: &str) -> Result<Tag, BakeError> {
+    let bytes = name.as_bytes();
+    let tag: [u8; 4] = bytes.try_into().map_err(|_| {
+        BakeError::new(
+            BakeErrorCode::InvalidDescriptor,
+            format!("variation axis tag {name:?} must be exactly four bytes"),
+        )
+    })?;
+    if tag.iter().any(|byte| !(0x20..=0x7E).contains(byte)) {
+        return Err(BakeError::new(
+            BakeErrorCode::InvalidDescriptor,
+            format!("variation axis tag {name:?} must be printable ASCII"),
+        ));
+    }
+    Ok(Tag::new(&tag))
 }
 
 fn reject_tables(font: &FontRef<'_>, tags: &[Tag], code: BakeErrorCode) -> Result<(), BakeError> {
@@ -280,13 +395,17 @@ fn rebuild_sfnt(font: &FontRef<'_>) -> Result<(Vec<u8>, Vec<TablePayloadReport>)
     Ok((output, reports))
 }
 
-fn collect_extents(font: &FontRef<'_>, glyph_count: u16) -> Result<(Vec<u8>, Vec<u8>), BakeError> {
+fn collect_extents(
+    font: &FontRef<'_>,
+    glyph_count: u16,
+    location: LocationRef<'_>,
+) -> Result<(Vec<u8>, Vec<u8>), BakeError> {
     let extents_len = usize::from(glyph_count)
         .checked_mul(8)
         .ok_or_else(overflow)?;
     let mut extents = vec![0_u8; extents_len];
     let mut availability = vec![0_u8; usize::from(glyph_count).div_ceil(8)];
-    let glyph_metrics = font.glyph_metrics(Size::unscaled(), LocationRef::default());
+    let glyph_metrics = font.glyph_metrics(Size::unscaled(), location);
     for glyph_id in 0..glyph_count {
         let Some(bounds) = glyph_metrics.bounds(GlyphId::new(u32::from(glyph_id))) else {
             continue;
@@ -325,10 +444,12 @@ fn encode_bounds(bounds: [f32; 4]) -> Result<[i16; 4], BakeError> {
     ])
 }
 
+/// A variable instance appends its coordinates to the three-block v0 digest; static fonts do not.
 fn shaping_fingerprint(
     sfnt: &[u8],
     extents: &[u8],
     availability: &[u8],
+    coordinates: &[i16],
 ) -> Result<String, BakeError> {
     let mut bytes = b"PMNDRS_font\0v0\0".to_vec();
     for value in [sfnt, extents, availability] {
@@ -338,6 +459,17 @@ fn shaping_fingerprint(
                 .to_le_bytes(),
         );
         bytes.extend_from_slice(value);
+    }
+    if !coordinates.is_empty() {
+        bytes.extend_from_slice(b"fvar\0");
+        bytes.extend_from_slice(
+            &u32::try_from(coordinates.len())
+                .map_err(|_| overflow())?
+                .to_le_bytes(),
+        );
+        for coordinate in coordinates {
+            bytes.extend_from_slice(&coordinate.to_le_bytes());
+        }
     }
     Ok(pmndrs_glyph_raster_artifact::fingerprint128(
         &bytes,
@@ -390,7 +522,7 @@ mod tests {
 
     #[test]
     fn optional_cjk_layout_tables_are_absent_when_the_source_omits_them() {
-        let payload = build_shaping_payload(INTER, 0).unwrap();
+        let payload = build_shaping_payload(INTER, 0, None).unwrap();
         let retained_tags = payload
             .report
             .tables
@@ -423,7 +555,7 @@ mod tests {
             })
             .to_vec();
 
-        let payload = build_shaping_payload(&source, 0).unwrap();
+        let payload = build_shaping_payload(&source, 0, None).unwrap();
         let reduced = FontRef::new(&payload.sfnt).unwrap();
         for (tag, expected_bytes) in expected {
             assert_eq!(
@@ -456,17 +588,41 @@ mod tests {
         let record = table_record(&source, *b"name");
         source[record..record + 4].copy_from_slice(b"STAT");
 
-        build_shaping_payload(&source, 0).unwrap();
+        build_shaping_payload(&source, 0, None).unwrap();
     }
 
     #[test]
-    fn variation_axis_tables_still_reject_variable_input() {
-        let mut source = INTER.to_vec();
-        let record = table_record(&source, *b"name");
-        source[record..record + 4].copy_from_slice(b"fvar");
+    fn requesting_axes_on_a_static_font_is_a_descriptor_error() {
+        let request = VariationRequestV0 {
+            axes: [("wght".to_owned(), 700.0)].into_iter().collect(),
+        };
+        let error = build_shaping_payload(INTER, 0, Some(&request))
+            .err()
+            .unwrap();
+        assert_eq!(error.code, BakeErrorCode::InvalidDescriptor);
 
-        let error = build_shaping_payload(&source, 0).err().unwrap();
-        assert_eq!(error.code, BakeErrorCode::UnsupportedVariableFont);
+        let empty = VariationRequestV0::default();
+        let payload = build_shaping_payload(INTER, 0, Some(&empty)).unwrap();
+        assert!(payload.variation.is_none());
+        assert_eq!(
+            payload.shaping_fingerprint,
+            build_shaping_payload(INTER, 0, None)
+                .unwrap()
+                .shaping_fingerprint
+        );
+    }
+
+    #[test]
+    fn axis_tags_must_be_four_printable_bytes() {
+        assert_eq!(axis_tag("wght").unwrap(), Tag::new(b"wght"));
+        assert_eq!(
+            axis_tag("weight").err().unwrap().code,
+            BakeErrorCode::InvalidDescriptor
+        );
+        assert_eq!(
+            axis_tag("w\u{e9}t").err().unwrap().code,
+            BakeErrorCode::InvalidDescriptor
+        );
     }
 
     fn table_record(font: &[u8], wanted: [u8; 4]) -> usize {

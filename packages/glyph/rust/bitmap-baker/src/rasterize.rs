@@ -7,7 +7,7 @@ use pmndrs_glyph_raster_artifact::{
 use read_fonts::{FontRef, TableProvider, types::GlyphId};
 use skrifa::{
     MetadataProvider,
-    instance::{LocationRef, Size},
+    instance::{LocationRef, NormalizedCoord, Size},
     outline::{DrawSettings, OutlinePen},
 };
 use zeno::{Command, Mask, Placement};
@@ -100,9 +100,11 @@ impl OutlinePen for ZenoPen {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn rasterize_strike(
     source: &[u8],
     face_index: u32,
+    variation_coordinates: &[i16],
     expected_glyph_count: u16,
     ppem: u16,
     coverage: Option<&ResolvedRasterCoverage>,
@@ -146,6 +148,12 @@ pub(crate) fn rasterize_strike(
             "font has no glyf, CFF, or CFF2 outline table to rasterize",
         ));
     }
+    let coords = variation_coordinates
+        .iter()
+        .copied()
+        .map(NormalizedCoord::from_bits)
+        .collect::<Vec<_>>();
+    let location = LocationRef::new(&coords);
     crate::progress::report(progress_offset, progress_total);
     let mut selected_index = 0_u32;
     for raw_glyph_id in 0..glyph_count {
@@ -166,7 +174,7 @@ pub(crate) fn rasterize_strike(
         let mut pen = ZenoPen::default();
         outline
             .draw(
-                DrawSettings::unhinted(Size::new(f32::from(ppem)), LocationRef::default()),
+                DrawSettings::unhinted(Size::new(f32::from(ppem)), location),
                 &mut pen,
             )
             .map_err(|error| {

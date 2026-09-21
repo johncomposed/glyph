@@ -30,6 +30,7 @@ import {
   type FontFaceSource,
 } from './font-face.js';
 import type { FormattedText } from './formatted-text.js';
+import type { FontVariationRequest } from './font-baker/index.js';
 import type { Font } from './font.js';
 import { glyph } from './glyph.js';
 import { GlyphFontError } from './loader.js';
@@ -156,10 +157,14 @@ export interface TextGroupComponent {
   new (props: VueTextGroupProps): VueTextGroupInstance & { $props: VueTextGroupProps };
 }
 
-export type GlyphProviderFontFace =
-  | FontFaceSource
-  | FontFace
-  | Readonly<{ src: FontFaceSource; format?: FontFaceConfig['format'] }>;
+/** One `GlyphProvider.fontFaces` entry; a source config's `format` and `variation` reach `glyph.fontFace` unchanged. */
+export type GlyphProviderFontFace = FontFaceSource | FontFace | ProviderFontFaceConfig;
+
+type ProviderFontFaceConfig = Readonly<{
+  src: FontFaceSource;
+  format?: FontFaceConfig['format'];
+  variation?: FontVariationRequest;
+}>;
 
 export interface GlyphProviderProps {
   /** Select a Three handle/root, or a named root on the built-in default handle. */
@@ -403,10 +408,7 @@ function createProviderFontFaces(table: Readonly<Record<string, GlyphProviderFon
       if (isFontFaceSelection(declaration)) {
         face = declaration.face;
       } else if (isProviderFontFaceConfig(declaration)) {
-        face =
-          declaration.format === undefined
-            ? glyph.fontFace(declaration.src)
-            : glyph.fontFace(declaration.src, { format: declaration.format });
+        face = declareProviderFontFace(declaration);
         owned.push(face);
       } else {
         face = glyph.fontFace(declaration);
@@ -436,18 +438,21 @@ function createProviderFontFaces(table: Readonly<Record<string, GlyphProviderFon
   };
 }
 
-function isProviderFontFaceConfig(value: unknown): value is Readonly<{
-  src: FontFaceSource;
-  format?: FontFaceConfig['format'];
-}> {
+function isProviderFontFaceConfig(value: unknown): value is ProviderFontFaceConfig {
   return (
     typeof value === 'object' &&
     value !== null &&
     !(value instanceof URL) &&
     !(typeof Blob !== 'undefined' && value instanceof Blob) &&
     Object.hasOwn(value, 'src') &&
-    Object.keys(value).every((key) => key === 'src' || key === 'format')
+    Object.keys(value).every((key) => key === 'src' || key === 'format' || key === 'variation')
   );
+}
+
+/** Pass only the declared options, because an explicit `undefined` is not an omitted FontFace option. */
+function declareProviderFontFace({ src, format, variation }: ProviderFontFaceConfig): FontFace {
+  if (format === undefined) return variation === undefined ? glyph.fontFace(src) : glyph.fontFace(src, { variation });
+  return variation === undefined ? glyph.fontFace(src, { format }) : glyph.fontFace(src, { format, variation });
 }
 
 function sameProviderFontFaceTable(
@@ -468,13 +473,14 @@ function sameProviderFontFaceTable(
 function sameProviderFontFaceDeclaration(left: GlyphProviderFontFace, right: GlyphProviderFontFace): boolean {
   if (left === right) return true;
   if (isFontFaceSelection(left) || isFontFaceSelection(right)) return false;
-  const leftKey = isProviderFontFaceConfig(left)
-    ? fontResourceKey(left.src, left.format)
-    : fontResourceKey(left, undefined);
-  const rightKey = isProviderFontFaceConfig(right)
-    ? fontResourceKey(right.src, right.format)
-    : fontResourceKey(right, undefined);
-  return leftKey === rightKey;
+  return providerFontFaceDeclarationKey(left) === providerFontFaceDeclarationKey(right);
+}
+
+function providerFontFaceDeclarationKey(declaration: Exclude<GlyphProviderFontFace, FontFace>): string {
+  if (isProviderFontFaceConfig(declaration)) {
+    return fontResourceKey(declaration.src, declaration.format, declaration.variation);
+  }
+  return fontResourceKey(declaration, undefined);
 }
 
 /** Optional immutable handle override and scoped string-FontFace table for Tres descendants. */

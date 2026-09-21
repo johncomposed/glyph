@@ -9,6 +9,7 @@ import { pathToFileURL } from 'node:url';
 
 import type { RasterBakePlan } from '../bake.js';
 import type { UnicodeRange } from '../font-baker/index.js';
+import type { FontVariationRequest } from '../font-baker/index.js';
 import { normalizeUnicodeRanges } from '../internal/font-selection.js';
 import { assertDistinctInputOutputs, publishFilesWithRollback } from '../internal/node-file-publication.js';
 import { resolveRasterBakePlan, type ResolvedRasterBakePlan } from '../internal/raster-bake-plan.js';
@@ -248,6 +249,7 @@ interface DirectBakeArguments {
   readonly output: string;
   readonly glyphMap?: string;
   readonly fontFaceIndex: number;
+  readonly variation?: FontVariationRequest;
   readonly bitmapStrikes?: readonly [number, ...number[]];
   readonly msdf: boolean;
   readonly msdfOptions?: MsdfOptions;
@@ -293,6 +295,7 @@ function parseBakeArguments(argv: readonly string[]): ParsedBakeArguments {
   let slug = false;
   let slugOptions: SlugOptions | undefined;
   let unicodeRanges: readonly UnicodeRange[] | undefined;
+  const axes: Record<string, number> = {};
   let check = false;
   let json = false;
   let help = false;
@@ -302,6 +305,10 @@ function parseBakeArguments(argv: readonly string[]): ParsedBakeArguments {
       help = true;
     } else if (argument === '--json') {
       json = true;
+    } else if (argument === '--axis') {
+      const [tag, value] = parseAxisSetting(valueAfter(argv, ++index, argument));
+      if (tag in axes) throw new TypeError(`--axis ${tag} may be provided only once`);
+      axes[tag] = value;
     } else if (argument === '--project-root') {
       projectRoot = valueAfter(argv, ++index, argument);
     } else if (argument === '--output-root') {
@@ -356,10 +363,12 @@ function parseBakeArguments(argv: readonly string[]): ParsedBakeArguments {
       throw new TypeError(`Unknown argument: ${argument}`);
     }
   }
+  const variation = Object.keys(axes).length === 0 ? undefined : { axes };
   const directSelected =
     input !== undefined ||
     output !== undefined ||
     glyphMap !== undefined ||
+    variation !== undefined ||
     bitmapStrikes !== undefined ||
     msdf ||
     slug ||
@@ -390,6 +399,7 @@ function parseBakeArguments(argv: readonly string[]): ParsedBakeArguments {
             output: output ?? derivedOutputPath(input!),
             ...(glyphMap === undefined ? {} : { glyphMap }),
             fontFaceIndex,
+            ...(variation === undefined ? {} : { variation }),
             ...(bitmapStrikes === undefined ? {} : { bitmapStrikes }),
             msdf,
             ...(msdfOptions === undefined ? {} : { msdfOptions }),
@@ -417,6 +427,16 @@ function nonnegativeInteger(value: string, option: string): number {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 0) throw new TypeError(`${option} requires a nonnegative integer`);
   return parsed;
+}
+
+function parseAxisSetting(value: string): readonly [string, number] {
+  const separator = value.indexOf('=');
+  const tag = separator === -1 ? '' : value.slice(0, separator);
+  const axisValue = Number(value.slice(separator + 1));
+  if (tag.length !== 4 || separator === -1 || !Number.isFinite(axisValue)) {
+    throw new TypeError('--axis requires a four-byte tag and a finite value, for example wght=700');
+  }
+  return [tag, axisValue];
 }
 
 function bitmapStrikeList(value: string): readonly [number, ...number[]] {
@@ -451,6 +471,7 @@ async function bakeDirect(
       output: options.output,
       input: options.input,
       fontFaceIndex: options.fontFaceIndex,
+      ...(options.variation === undefined ? {} : { variation: options.variation }),
       ...(options.unicodeRanges === undefined ? {} : { unicodeRanges: options.unicodeRanges }),
       rasters: resolved.map((plan) => ({
         rasterKey: plan.rasterKey,
@@ -476,7 +497,10 @@ async function bakeDirect(
     const report = await bakeFont({
       input: options.input,
       output,
-      font: { fontFaceIndex: options.fontFaceIndex },
+      font: {
+        fontFaceIndex: options.fontFaceIndex,
+        ...(options.variation === undefined ? {} : { variation: options.variation }),
+      },
       ...(options.unicodeRanges === undefined ? {} : { unicodeRanges: options.unicodeRanges }),
       rasters: plans,
     });
@@ -733,6 +757,9 @@ Direct font options:
                         Example: "My Font.ttf" bakes to my-font.glb
   --glyph-map <path>     Write name-to-code-point JSON for the selected Unicode set
   --font-face-index <n>  Collection face to bake (default: 0)
+  --axis <tag=value>     Pin one variable-font axis for this bake; repeat per axis
+                        Example: --axis wght=700 --axis wdth=87.5
+                        A variable font with no --axis bakes its default instance
   --unicodes <set>       Unicode set used to prepare a smaller source font
                         Example: U+0020-007E,U+00A0-00FF,U+4E00-9FFF
                         Selects code points, not raw glyph IDs

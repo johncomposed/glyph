@@ -14,6 +14,8 @@ export interface RuntimeFontArtifact {
   readonly shapingSfnt: Uint8Array;
   readonly glyphExtents: Uint8Array;
   readonly glyphExtentsAvailability: Uint8Array;
+  /** Normalized F2Dot14 coordinates of the baked instance in `fvar` axis order; empty for a static font. */
+  readonly variationCoordinates: readonly number[];
   readonly shapingFingerprint: Fingerprint;
   readonly sourceFingerprint: Fingerprint;
 }
@@ -64,6 +66,7 @@ export function readRuntimeFontArtifact(bytes: Uint8Array): RuntimeFontArtifact 
     shapingSfnt: shaping,
     glyphExtents: extents,
     glyphExtentsAvailability: availability,
+    variationCoordinates: variationCoordinates(extension.variation),
     shapingFingerprint: text(extension.shaping.fingerprint, 'shaping.fingerprint') as Fingerprint,
     sourceFingerprint: text(extension.provenance.sourceFingerprint, 'provenance.sourceFingerprint') as Fingerprint,
   };
@@ -118,4 +121,17 @@ function integer(value: unknown, name: string): number {
 function text(value: unknown, name: string): string {
   if (typeof value !== 'string') throw new TypeError(`${name} must be a string`);
   return value;
+}
+
+/** A static font carries no `variation`; a variable instance carries one `i16` per `fvar` axis. */
+function variationCoordinates(variation: PmndrsFontExtension['variation']): readonly number[] {
+  if (variation === undefined) return [];
+  const coordinates = variation.coordinates;
+  if (
+    !Array.isArray(coordinates) ||
+    !coordinates.every((value) => Number.isInteger(value) && value >= -32_768 && value <= 32_767)
+  ) {
+    throw new RuntimeFontArtifactError('FONT_INVALID', 'PMNDRS_font variation.coordinates must be i16 values');
+  }
+  return coordinates;
 }

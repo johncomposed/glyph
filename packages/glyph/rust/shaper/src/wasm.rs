@@ -65,6 +65,8 @@ pub unsafe extern "C" fn pmndrs_glyph_shaper_register_font(
     extents_length: u32,
     availability_pointer: u32,
     availability_length: u32,
+    coordinates_pointer: u32,
+    coordinates_length: u32,
     underline_packed: u32,
     strikeout_packed: u32,
 ) -> u32 {
@@ -85,11 +87,16 @@ pub unsafe extern "C" fn pmndrs_glyph_shaper_register_font(
         else {
             return 3;
         };
+        let Some(coordinates) = owned_bytes(allocations, coordinates_pointer, coordinates_length)
+        else {
+            return 2;
+        };
         registry.register_font(
             handle,
             sfnt,
             extents,
             availability,
+            coordinates,
             underline_packed,
             strikeout_packed,
         )

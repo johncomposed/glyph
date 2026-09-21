@@ -25,6 +25,10 @@ export type PmndrsFontExtension = {
     readonly strikeoutPosition: number;
     readonly strikeoutSize: number;
   };
+  readonly variation?: {
+    readonly axes: Readonly<Record<string, number>>;
+    readonly coordinates: readonly (number)[];
+  };
   readonly provenance: {
     readonly sourceFingerprint: string;
     readonly fontFaceIndex: number;

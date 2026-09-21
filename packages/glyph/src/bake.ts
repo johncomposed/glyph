@@ -36,6 +36,8 @@ export interface RasterBakeFontContext {
   readonly source: Uint8Array;
   readonly sourceFingerprint: Fingerprint;
   readonly fontFaceIndex: number;
+  /** Normalized F2Dot14 coordinates the core bake pinned; empty for a static font. Rasters draw outlines at this instance. */
+  readonly variationCoordinates: readonly number[];
   readonly glyphCount: number;
   readonly shapingFingerprint: Fingerprint;
 }

@@ -5,7 +5,7 @@ description: Implements portable font loading, retained Rust shaping and layout,
 resource: ../../../packages/glyph
 workspace_package: '@pmndrs/glyph'
 documentation_type: reference
-source_digest: 'sha256:48d7c834b3535286bbe36038c945134846c0cb3771f7380160f298746d669c54'
+source_digest: 'sha256:b1e9e2ca8a3d1e568c0f7ced70af2d62d6b120605ec1ae0d46e906a31e8bbeab'
 tags: [package, public-api, rust, wasm, threejs, typography]
 sources:
   - id: manifest
@@ -147,7 +147,10 @@ The package owns six runtime layers:
 
 Runtime Rust and all shared Rust code remain `no_std + alloc` compatible with the package allocator contract. The optional
 font-baker Wasm alone enables a feature-gated `std` adapter for Fontations subsetting; the same crate continues to
-pass its `wasm32-unknown-unknown --no-default-features` build. The text engine uses the existing compile-time direct-memory mapping
+pass its `wasm32-unknown-unknown --no-default-features` build. A variable source is pinned to one instance at bake
+time (D-371): the descriptor's user-space axis values normalize once through Skrifa, the artifact records
+`PMNDRS_font.variation`, the shaping payload retains `fvar`/`avar`/`HVAR`/`VVAR`/`MVAR`, and the engine, extents,
+line metrics, and every raster baker read the same normalized coordinates. The subsetter never instances the font. The text engine uses the existing compile-time direct-memory mapping
 for font registrations. Ordinary publication enters once through
 `pmndrs_glyph_engine_update_batch(entriesPointer, count)`, whose entries address the already-written request slice and
 one borrowed result arena for each dirty root. Paragraph-scoped semantic queries remain separate synchronous calls.
@@ -329,11 +332,16 @@ anonymous root, or `handle(name).createText()` and `handle(name).createTextGroup
 
 React font selection has three coexisting public paths. A caller-owned FontFace may be passed directly to outer or nested
 Text; `useFont` and the typed `useBitmap`/`useMsdf`/`useSlug` leaves own hook-created declarations and mounted Font
-leases; and `GlyphProvider.fontFaces` supplies optional subtree-local string aliases from sources, `{ src, format? }`, or
-caller-owned FontFaces. All three use the same Glyph resource graph. `suspend-react` retains only stable Promise/error
-identity across React retries, and is not a semantic font cache. See [React font loading](../guides/react.md).
+leases; and `GlyphProvider.fontFaces` supplies optional subtree-local string aliases from sources,
+`{ src, format?, variation? }`, or caller-owned FontFaces. A table entry's `format` and `variation` reach
+`glyph.fontFace` unchanged, so a shorthand entry can pin a variable source to one instance; that instance is part of the
+entry's identity, and a remount table naming another instance is a changed table rather than a reuse. Both adapters
+share that identity rule through one package-owned resource key. All three use the same Glyph resource graph.
+`suspend-react` retains only stable Promise/error identity across React retries, and is not a semantic font cache. See
+[React font loading](../guides/react.md).
 
-The Vue adapter mirrors that contract for TresJS. Its `Text` and `TextGroup` are `defineComponent` render functions
+The Vue adapter mirrors that contract for TresJS, including the `fontFaces` entry shapes and their identity rule. Its
+`Text` and `TextGroup` are `defineComponent` render functions
 that construct the same retained Three classes through the Tres catalogue under private tag names; applications never
 use those tags. The paragraph style list is the `textStyle` prop rather than `style`, because Vue normalizes any
 array-valued `style` prop into one merged object while creating the vnode, before setup can observe the list; `layout`
@@ -436,9 +444,13 @@ keep its identity registry alive or permanently poison later registration after 
 `ParagraphMeasurement`, and `FontFeature`, so a `/three` importer can name every Three text query result.
 
 One baked GLB may expose several raster formats without repeating its input identity. The ordinary declaration and loading
-surface is `glyph.fontFace(source, { family?, format? })`; root does not export `loadFont`, `createFontLibrary`, or
+surface is `glyph.fontFace(source, { family?, format?, variation? })`; root does not export `loadFont`, `createFontLibrary`, or
 `FontLibrary`, and there is no public font-library leaf. Package-owned loading services preserve custom transport and
-runtime-bake support behind the FontFace declaration. The face is
+runtime-bake support behind the FontFace declaration. A `variation` of user-space `fvar` axis values pins a variable
+source to one static instance (D-371): the declaration forwards it unchanged to the runtime bake descriptor, keys its
+shared load and CacheStorage entry by it, and skips implicit baked-sibling discovery because one sibling holds one
+instance; a `.glb` source, baked Blob, or SerializedFontFace rejects it because a baked artifact already carries its
+instance. Project discovery still bakes one default-instance sibling per source. The face is
 its aggregate/default selection, `.default` aliases
 it, and declared keys such as `.bitmap`, `.msdf`, or `.slug` are distinct inferred format selections. The declaration
 owns loading: `face.load()` loads every authoritative imported format advertised by the main font plus every declared
@@ -531,13 +543,14 @@ technique identifier. Decorated command-buffer gathers rebuild their output, cou
 directly from the retained contiguous decoration slice without a transient filtered allocation; the undecorated retained
 fast path is unchanged.
 
-When runtime baking is required, one Worker request normalizes the Unicode ranges, prepares the selected source once,
-and feeds those exact prepared bytes to the shaping bake and every requested Bitmap, MSDF, or Slug bake. The Worker
+When runtime baking is required, one Worker request normalizes the Unicode ranges, carries the declared variation
+instance, prepares the selected source once, and feeds those exact prepared bytes to the shaping bake and every
+requested Bitmap, MSDF, or Slug bake. The Worker
 composes and validates one canonical GLB before transferring it. Its `asset.generator` is the publishing package identity
 `@pmndrs/glyph`, independent of whether the producer was the CLI, Node API, or runtime Worker.
 
 The Worker caches only that final validated GLB in `CacheStorage`; partial preparation and raster outputs never become
-cache entries. Identity covers source bytes, face, normalized ranges, ordered raster descriptors and keys, and all
+cache entries. Identity covers source bytes, face, variation instance, normalized ranges, ordered raster descriptors and keys, and all
 relevant format/baker versions. Persistence is inherited from the source response: `no-store`, `no-cache`, missing
 freshness metadata, and already-expired responses remain memory-only, while `max-age` or `Expires` supplies the exact
 derived-artifact expiration. Browser quota eviction owns storage pressure. Cache absence, quota rejection, privacy

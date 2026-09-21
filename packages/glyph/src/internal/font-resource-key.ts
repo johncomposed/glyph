@@ -1,13 +1,19 @@
 import type { FontFaceConfig, FontFaceFormat, FontFaceSource } from '../font-face.js';
+import type { FontVariationRequest } from '../font-baker/index.js';
+import { normalizeFontVariation } from './font-variation.js';
 import { isRasterFormat, rasterFormatDescriptor } from './raster-format-registry.js';
 import { canonicalJson } from './raster-identity.js';
 
 const sourceIds = new WeakMap<object, number>();
 let nextSourceId = 1;
 
-/** Canonical identity for one adapter-owned FontFace declaration and raster request. */
-export function fontResourceKey(source: FontFaceSource, format: FontFaceConfig['format']): string {
-  return `${fontFaceSourceKey(source)}:${fontFaceFormatIdentity(format)}`;
+/** Canonical identity for one adapter-owned FontFace declaration, including its pinned variation instance. */
+export function fontResourceKey(
+  source: FontFaceSource,
+  format: FontFaceConfig['format'],
+  variation?: FontVariationRequest,
+): string {
+  return `${fontFaceSourceKey(source)}:${fontFaceFormatIdentity(format)}:${fontFaceVariationIdentity(variation)}`;
 }
 
 function fontFaceSourceKey(source: FontFaceSource): string {
@@ -36,4 +42,10 @@ function singleFormatIdentity(format: FontFaceFormat): string {
   if (typeof format === 'string') return `key:${format}`;
   const raster = isRasterFormat(format) ? format : format.raster;
   return `raster:${raster.id}:${canonicalJson(rasterFormatDescriptor(format))}`;
+}
+
+function fontFaceVariationIdentity(variation: FontVariationRequest | undefined): string {
+  const normalized = normalizeFontVariation(variation, 'FontFace variation');
+  if (normalized === undefined) return 'default';
+  return `variation:${canonicalJson(normalized.axes)}`;
 }

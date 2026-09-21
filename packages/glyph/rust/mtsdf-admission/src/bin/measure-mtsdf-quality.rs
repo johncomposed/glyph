@@ -67,7 +67,7 @@ fn run() -> Result<(), String> {
             eprintln!("{character:?} is not in the font's character map");
             continue;
         };
-        let Some(source) = font_outline_source(&font, glyph_id) else {
+        let Some(source) = font_outline_source(&font, glyph_id, LocationRef::default()) else {
             eprintln!("{character:?} has no outline");
             continue;
         };

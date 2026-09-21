@@ -13,6 +13,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const fontUrl = new URL('../../../../benches/fixtures/rendering/inter-bitmap-16.font.glb', import.meta.url);
 const multiFormatFontUrl = new URL('../../../../apps/r3f-hello-world/assets/inter-latin.font.glb', import.meta.url);
+const variableFontUrl = new URL('../../../../benches/fixtures/fonts/oxanium-wght/Oxanium[wght].ttf', import.meta.url);
 await glyph.init();
 const r3fHandle = glyph.handle('three:react-lease-tests', ThreeConfig);
 after(() => r3fHandle.dispose());
@@ -198,6 +199,49 @@ test('GlyphProvider reuses equal inline source tables and releases its declarati
   } finally {
     createdFaces.restore();
   }
+});
+
+test('GlyphProvider forwards a declared variation and treats a changed instance as a changed declaration', async () => {
+  const { create, waitFor } = await import('../support/r3f-test-renderer.mjs');
+  const input = new Blob([await readFile(multiFormatFontUrl)], { type: 'model/gltf-binary' });
+  const variable = new Blob([await readFile(variableFontUrl)], { type: 'font/ttf' });
+  const createdFaces = captureCreatedFontFaces();
+  let mountedFont;
+  let renderer;
+  try {
+    const tree = (weight) =>
+      createElement(
+        GlyphProvider,
+        {
+          handle: r3fHandle,
+          fontFaces: {
+            Inter: { src: input, format: msdf },
+            Bold: { src: variable, variation: { axes: { wght: weight } } },
+          },
+          fallback: null,
+        },
+        createElement(
+          Text,
+          { font: 'Inter', ref: (object) => void (mountedFont = object?.font ?? mountedFont) },
+          'pinned sibling',
+        ),
+      );
+    renderer = await create(tree(700));
+    assert.deepEqual(
+      createdFaces.calls[1],
+      [variable, { variation: { axes: { wght: 700 } } }],
+      'the provider forwards the declared instance to glyph.fontFace unchanged',
+    );
+    await createdFaces.faces[0].load();
+    await renderer.update(tree(700));
+    await waitFor(() => mountedFont !== undefined);
+    assert.equal(createdFaces.faces.length, 2, 'an equal table naming the same instance reuses both declarations');
+    await assert.rejects(() => renderer.update(tree(400)), /GlyphProvider handle and fontFaces are immutable/);
+  } finally {
+    await renderer?.unmount();
+    createdFaces.restore();
+  }
+  assert.equal(createdFaces.faces[1].disposed, true, 'the provider disposes the pinned declaration it created');
 });
 
 test('Text suspends on an existing unloaded FontFace selection', async () => {
@@ -663,13 +707,16 @@ function bytesToArrayBuffer(value) {
 function captureCreatedFontFaces() {
   const fontFace = glyph.fontFace;
   const faces = [];
+  const calls = [];
   glyph.fontFace = function capturedFontFace(...args) {
     const face = Reflect.apply(fontFace, glyph, args);
     faces.push(face);
+    calls.push(args);
     return face;
   };
   return {
     faces,
+    calls,
     restore() {
       glyph.fontFace = fontFace;
     },

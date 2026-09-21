@@ -6,9 +6,16 @@ import { isFingerprint } from '../internal/fingerprint.js';
 export { FONT_BAKER_VERSION, FONT_FORMAT_VERSION } from './contract.js';
 export { fontBakerAbi } from './generated/font-baker-abi.js';
 
+/** User-space axis values keyed by four-byte `fvar` tag, for example `{ wght: 700 }`; values clamp to axis ranges. */
+export interface FontVariationRequest {
+  readonly axes: Readonly<Record<string, number>>;
+}
+
 export interface FontBakeDescriptor {
   readonly formatVersion: 0;
   readonly fontFaceIndex: number;
+  /** Instance to pin a variable source to. Omitted means the `fvar` default instance. */
+  readonly variation?: FontVariationRequest;
 }
 
 export interface FontBakeRequest {

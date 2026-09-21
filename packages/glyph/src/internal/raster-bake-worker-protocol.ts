@@ -8,6 +8,7 @@ export interface RasterBakeWorkerRequest {
   readonly source: ArrayBuffer;
   readonly sourceFingerprint: Fingerprint;
   readonly fontFaceIndex: number;
+  readonly variationCoordinates: readonly number[];
   readonly glyphCount: number;
   readonly shapingFingerprint: Fingerprint;
   readonly rasterKey: RasterKey;
@@ -50,6 +51,7 @@ export function isRasterBakeWorkerRequest(value: unknown): value is RasterBakeWo
     value.source instanceof ArrayBuffer &&
     isFingerprint(value.sourceFingerprint) &&
     isNonnegativeSafeInteger(value.fontFaceIndex) &&
+    isVariationCoordinates(value.variationCoordinates) &&
     isPositiveSafeInteger(value.glyphCount) &&
     isFingerprint(value.shapingFingerprint) &&
     isFingerprint(value.rasterKey) &&
@@ -132,4 +134,12 @@ function isPositiveSafeInteger(value: unknown): value is number {
 
 function isNonnegativeSafeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isVariationCoordinates(value: unknown): value is readonly number[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= 65_535 &&
+    value.every((coordinate) => Number.isInteger(coordinate) && coordinate >= -32_768 && coordinate <= 32_767)
+  );
 }

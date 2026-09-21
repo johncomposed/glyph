@@ -9,7 +9,10 @@ use pmndrs_glyph_slug_core::{
     quantize_f16,
 };
 use pmndrs_glyph_slug_fontations::{FontOutlineError, font_glyph_geometry, glyph_count};
-use skrifa::{FontRef, GlyphId, MetadataProvider};
+use skrifa::{
+    FontRef, GlyphId, MetadataProvider,
+    instance::{LocationRef, NormalizedCoord},
+};
 
 use crate::{
     error::{SlugBakeError, SlugBakeErrorCode, overflow},
@@ -72,6 +75,7 @@ pub fn bake_slug(
     let packed = rasterize_font(
         source,
         request.font_face_index,
+        &request.variation_coordinates,
         request.glyph_count,
         settings.cubic_subdivisions,
     )?;
@@ -156,6 +160,7 @@ fn artifact_fingerprint(bytes: &[u8]) -> String {
 fn rasterize_font(
     source: &[u8],
     face_index: u32,
+    variation_coordinates: &[i16],
     expected_glyph_count: u16,
     cubic_subdivisions: u8,
 ) -> Result<PackedSlug, SlugBakeError> {
@@ -179,6 +184,12 @@ fn rasterize_font(
         .at("/glyphCount"));
     }
 
+    let coords = variation_coordinates
+        .iter()
+        .copied()
+        .map(NormalizedCoord::from_bits)
+        .collect::<Vec<_>>();
+    let location = LocationRef::new(&coords);
     let mut geometries = Vec::<Option<(GlyphGeometry, [i16; 4])>>::new();
     geometries
         .try_reserve_exact(usize::from(actual_glyph_count))
@@ -189,6 +200,7 @@ fn rasterize_font(
         let geometry = font_glyph_geometry(
             &font,
             GlyphId::new(u32::from(raw_glyph_id)),
+            location,
             DEFAULT_BAND_COUNT,
             cubic_subdivisions,
         )
@@ -383,6 +395,7 @@ mod tests {
                 pmndrs_glyph_raster_artifact::SOURCE_FINGERPRINT_V0,
             ),
             font_face_index: 0,
+            variation_coordinates: Vec::new(),
             glyph_count: 2937,
             shaping_fingerprint: "11".repeat(16),
             raster_key: raster_key.clone(),

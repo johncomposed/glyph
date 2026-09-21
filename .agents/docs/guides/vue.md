@@ -31,11 +31,11 @@ generated:
 React adapter and reconciles them into the same retained Three `Text` and `TextGroup` objects. None of the paths
 creates another byte, decoded-font, shaping, or renderer-resource cache.[^font-face][^vue-adapter]
 
-| Path                      | Use it when                                                                   | Declaration owner                                             | Mounted Font lease |
-| ------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------ |
-| Direct `FontFace`         | Application code already owns a reusable declaration or exact format.         | Caller                                                        | `<Text>`           |
-| `useFont` or a format leaf | A component wants Vue to own declaration and mounted lifetime.               | Composable cache                                              | Composable         |
-| `GlyphProvider.fontFaces` | A subtree should resolve short family aliases such as `"Inter"`.              | Provider for shorthand entries; caller for passed FontFaces   | `<Text>`           |
+| Path                       | Use it when                                                           | Declaration owner                                           | Mounted Font lease |
+| -------------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------ |
+| Direct `FontFace`          | Application code already owns a reusable declaration or exact format. | Caller                                                      | `<Text>`           |
+| `useFont` or a format leaf | A component wants Vue to own declaration and mounted lifetime.        | Composable cache                                            | Composable         |
+| `GlyphProvider.fontFaces`  | A subtree should resolve short family aliases such as `"Inter"`.      | Provider for shorthand entries; caller for passed FontFaces | `<Text>`           |
 
 Vue has no render-phase suspension, so the adapter is reactive instead of suspending. A `<Text>` whose selection is
 still loading mounts nothing, starts every missing load at once, and constructs its Three object when the last one
@@ -101,14 +101,22 @@ scope.
 
 ```vue
 <template>
-  <GlyphProvider :font-faces="{ Inter: '/fonts/Inter.font.glb', Title: { src: '/fonts/Title.font.glb', format: 'slug' } }">
+  <GlyphProvider
+    :font-faces="{
+      Inter: '/fonts/Inter.font.glb',
+      Title: { src: '/fonts/Title.font.glb', format: 'slug' },
+      Bold: { src: '/fonts/Oxanium.ttf', variation: { axes: { wght: 700 } } },
+    }"
+  >
     <Text font="Inter">Named <Text font="Title">provider fonts</Text></Text>
   </GlyphProvider>
 </template>
 ```
 
 `handle` and `font-faces` are immutable for the life of a provider; changing either throws, so remount the provider
-instead. Shorthand entries are provider-owned and disposed with it; a passed FontFace stays caller-owned. A string
+instead. Shorthand entries are provider-owned and disposed with it; a passed FontFace stays caller-owned. An entry's
+optional `format` and `variation` reach `glyph.fontFace` unchanged, and a pinned `variation` is part of the entry's
+identity, so a table naming another instance is a changed table. A string
 `handle` selects a named root on the built-in default handle; a `ThreeHandle` or `ThreeRoot` selects an application
 handle.
 
@@ -125,7 +133,11 @@ handle.
 - Frame errors and font load failures reach the component's `error` emit.
 
 [^vue-adapter]: The adapter defines reactive font readiness, per-canvas default roots, provider aliases, and scope-bound cleanup.
+
 [^vue-format-composables]: The three format leaves delegate to `useFont` while preserving each RasterFormat's option and return types; the flattener turns nested `<Text>` slots into inline spans.
+
 [^font-face]: FontFace loading owns canonical source, decoded-format, dependency, retry, and declaration lifetimes.
+
 [^vue-contract]: The compile-only contract proves accepted provider entries, composable return inference, and exposed instance types.
+
 [^vue-lifecycle]: Integration coverage under a happy-dom TresCanvas proves leases balance across Tres disposal, default roots isolate per canvas, and one canvas survives another's unmount.

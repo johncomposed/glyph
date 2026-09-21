@@ -7,6 +7,8 @@ interface Segment {
   script: string;
   language: string;
   features: string[];
+  /** Variable-font axis settings such as `wght=700`; absent or empty shapes the default instance. */
+  variations?: string[];
 }
 
 interface Case extends Partial<Segment> {
@@ -68,11 +70,13 @@ const cases = corpus.cases
     if (entry.text.length !== entry.utf16Length || [...entry.text].length !== entry.codePoints.length) {
       throw new Error(`case ${entry.id} has inconsistent text metadata`);
     }
+    const variations = entry.variations ?? corpus.defaults.variations ?? [];
     const segment = {
       direction: entry.direction ?? corpus.defaults.direction,
       script: entry.script ?? corpus.defaults.script,
       language: entry.language ?? corpus.defaults.language,
       features: entry.features ?? corpus.defaults.features,
+      ...(variations.length === 0 ? {} : { variations }),
     };
     const raw = execFileSync(
       executable,
@@ -83,6 +87,7 @@ const cases = corpus.cases
         `--script=${segment.script}`,
         `--language=${segment.language}`,
         `--features=${segment.features.join(',')}`,
+        ...(variations.length === 0 ? [] : [`--variations=${variations.join(',')}`]),
         '--cluster-level=0',
         '--unsafe-to-concat',
         '--show-flags',

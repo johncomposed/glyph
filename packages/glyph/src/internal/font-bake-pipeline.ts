@@ -1,8 +1,8 @@
 import type { BakeProgressListener } from '../bake.js';
-import type { FontBakeCore, PreparedFontReport } from '../font-baker/index.js';
+import type { FontBakeCore, FontVariationRequest, PreparedFontReport } from '../font-baker/index.js';
 
 import { composeFontBake, type ComposedFontBakeResult } from './compose-bake.js';
-import { soleCoreFontArtifact } from './core-bake-policy.js';
+import { fontBakeDescriptor, soleCoreFontArtifact } from './core-bake-policy.js';
 import { readRuntimeFontArtifact } from './font-artifact-reader.js';
 import { normalizeUnicodeRanges } from './font-selection.js';
 import type { ResolvedRasterBakePlan } from './raster-bake-plan.js';
@@ -12,6 +12,7 @@ export interface FontBakePipelineOptions {
   readonly source: Uint8Array;
   readonly fontFaceIndex: number;
   readonly unicodeRanges?: readonly { readonly start: number; readonly end: number }[];
+  readonly variation?: FontVariationRequest;
   readonly rasters: readonly ResolvedRasterBakePlan[];
   readonly signal?: AbortSignal;
   readonly onProgress?: BakeProgressListener;
@@ -53,7 +54,7 @@ export async function bakeFontPipeline(options: FontBakePipelineOptions): Promis
   const fontFaceIndex = preparation?.report.fontFaceIndex ?? options.fontFaceIndex;
   const core = options.fontBaker.bake({
     source,
-    descriptor: { formatVersion: 0, fontFaceIndex },
+    descriptor: fontBakeDescriptor(fontFaceIndex, options.variation),
   });
   timings.coreBake = performance.now() - phase;
   options.signal?.throwIfAborted();
@@ -75,6 +76,7 @@ export async function bakeFontPipeline(options: FontBakePipelineOptions): Promis
         source,
         sourceFingerprint: coreFont.sourceFingerprint,
         fontFaceIndex,
+        variationCoordinates: coreFont.variationCoordinates,
         glyphCount: coreFont.extension.metrics.glyphCount,
         shapingFingerprint: coreFont.shapingFingerprint,
       },

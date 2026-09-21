@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { createCache } from '../../dist/internal/runtime-font-cache.js';
 
-test('runtime GLB cache keys include source, normalized ranges, and exact raster plans', async () => {
+test('runtime GLB cache keys include source, instance, normalized ranges, and exact raster plans', async () => {
   const storage = new MemoryCacheStorage();
   const cache = createCache(storage, 'https://assets.test', () => 1_000);
   const source = '1'.repeat(32);
@@ -14,6 +14,9 @@ test('runtime GLB cache keys include source, normalized ranges, and exact raster
   assert.notEqual(await cache.key('2'.repeat(32), request), key);
   assert.notEqual(await cache.key(source, { ...request, unicodeRanges: [{ start: 0x20, end: 0x7f }] }), key);
   assert.notEqual(await cache.key(source, { ...request, rasters: [] }), key);
+  const pinned = { ...request, font: { ...request.font, variation: { axes: { wght: 700 } } } };
+  assert.notEqual(await cache.key(source, pinned), key, 'a pinned instance is a different derived artifact');
+  assert.equal(await cache.key(source, structuredClone(pinned)), await cache.key(source, pinned));
 });
 
 test('runtime GLB cache returns exact bytes and honors the source response expiration', async () => {

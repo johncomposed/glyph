@@ -31,7 +31,7 @@ pub(crate) fn build_font_glb(
     bin[availability_offset..availability_offset + shaping.extents_availability.len()]
         .copy_from_slice(&shaping.extents_availability);
 
-    let document = json!({
+    let mut document = json!({
         "asset": { "version": "2.0", "generator": "@pmndrs/glyph" },
         "extensionsUsed": ["PMNDRS_font"],
         "extensionsRequired": ["PMNDRS_font"],
@@ -58,6 +58,12 @@ pub(crate) fn build_font_glb(
             { "buffer": 0, "byteOffset": availability_offset, "byteLength": shaping.extents_availability.len() }
         ]
     });
+    if let Some(variation) = &shaping.variation {
+        document["extensions"]["PMNDRS_font"]["variation"] = serde_json::to_value(variation)
+            .map_err(|error| {
+                BakeError::new(BakeErrorCode::SerializationFailed, error.to_string())
+            })?;
+    }
     let json_raw = serde_json::to_vec(&document)
         .map_err(|error| BakeError::new(BakeErrorCode::SerializationFailed, error.to_string()))?;
     let json_padded_len = align4(json_raw.len());

@@ -10,9 +10,10 @@ use skrifa::{
     raw::TableProvider,
 };
 
-/// One unscaled Fontations glyph presented through the MTSDF outline contract.
+/// One unscaled Fontations glyph at one variation location, as an MTSDF outline source.
 pub struct FontationsOutlineSource<'font> {
     glyph: skrifa::outline::OutlineGlyph<'font>,
+    location: LocationRef<'font>,
     bounds: Bounds,
     units_per_em: f32,
     reversed: bool,
@@ -21,10 +22,7 @@ pub struct FontationsOutlineSource<'font> {
 impl FontationsOutlineSource<'_> {
     pub fn draw(&self, pen: &mut impl OutlinePen) -> Result<(), skrifa::outline::DrawError> {
         self.glyph
-            .draw(
-                DrawSettings::unhinted(Size::unscaled(), LocationRef::default()),
-                pen,
-            )
+            .draw(DrawSettings::unhinted(Size::unscaled(), self.location), pen)
             .map(|_| ())
     }
 
@@ -58,18 +56,20 @@ impl OutlineSource for FontationsOutlineSource<'_> {
     }
 }
 
-/// Resolve one glyph without reparsing or flattening its maintained font outline.
+/// Resolve one glyph at `location`; an empty location is the default instance.
 pub fn font_outline_source<'font>(
     font: &'font FontRef<'font>,
     glyph_id: GlyphId,
+    location: LocationRef<'font>,
 ) -> Option<FontationsOutlineSource<'font>> {
     let outlines = font.outline_glyphs();
     let glyph = outlines.get(glyph_id)?;
     let glyph_bounds = font
-        .glyph_metrics(Size::unscaled(), LocationRef::default())
+        .glyph_metrics(Size::unscaled(), location)
         .bounds(glyph_id)?;
     Some(FontationsOutlineSource {
         glyph,
+        location,
         bounds: Bounds::new(
             glyph_bounds.x_min,
             glyph_bounds.y_min,

@@ -8,6 +8,7 @@ const notices = [
   ['DotGothic16', '../fixtures/fonts/dot-gothic-16/OFL.txt'],
   ['Source Serif 4.005', '../fixtures/fonts/source-serif-4.005/OFL.md'],
   ['Dancing Script 3.000', '../fixtures/fonts/dancing-script-3.000/OFL.txt'],
+  ['Oxanium', '../fixtures/fonts/oxanium-wght/OFL.txt'],
 ] as const;
 
 export async function fontNotices(): Promise<string> {

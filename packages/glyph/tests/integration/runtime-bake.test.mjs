@@ -7,7 +7,7 @@ import test from 'node:test';
 import { loadFont, FontLoader } from '../../dist/loader.js';
 import { bakeFont, createFontBaker, fontBakerWasmUrl } from '@pmndrs/glyph/bake';
 import { bakeFontInWorker } from '@pmndrs/glyph/runtime-bake';
-import { bitmap, msdf, slug } from '@pmndrs/glyph';
+import { bitmap, glyph, msdf, slug } from '@pmndrs/glyph';
 import bitmapBaker from '../../dist/bakers/bitmap.js';
 import msdfBaker from '../../dist/bakers/msdf.js';
 import slugBaker from '../../dist/bakers/slug.js';
@@ -609,3 +609,138 @@ function restoreGlobal(key, value) {
 function embeddedPackaging() {
   return { artifact: 'embedded' };
 }
+
+test('a requested instance reaches the runtime bake, skips implicit sibling discovery, and keys the load', async (t) => {
+  const { source } = await fixturePromise;
+  const baked = await readFile(
+    new URL('../../../../apps/r3f-hello-world/assets/inter-latin.font.glb', import.meta.url),
+  );
+  const requests = [];
+  const fetched = [];
+  const loader = new FontLoader({
+    baseUrl: 'https://assets.test/',
+    development: false,
+    fetch: async (input) => {
+      fetched.push(String(input));
+      if (String(input).endsWith('.font.glb')) return new Response(null, { status: 404 });
+      return new Response(source);
+    },
+    runtimeBake: async (request) => {
+      requests.push(request);
+      return baked;
+    },
+  });
+  const bold = { source: 'Oxanium.ttf', variation: { axes: { wght: 700 } } };
+  const [first, shared] = await Promise.all([loader.load(bold), loader.load(bold)]);
+  t.after(() => first.dispose());
+  assert.equal(shared, first, 'equal instance requests share one load');
+  assert.deepEqual(fetched, ['https://assets.test/Oxanium.ttf'], 'a pinned instance never probes the implicit sibling');
+  assert.equal(requests.length, 1);
+  assert.deepEqual(requests[0].variation, { axes: { wght: 700 } });
+  assert.equal(requests[0].bakedUrl, undefined);
+
+  await loader.load({ source: 'Oxanium.ttf', variation: { axes: { wght: 400 } } });
+  assert.equal(requests.length, 2, 'a different instance is a different load');
+  assert.deepEqual(requests[1].variation, { axes: { wght: 400 } });
+
+  await loader.load({ source: 'Oxanium.ttf', variation: { axes: {} } });
+  assert.equal(requests.length, 3);
+  assert.equal(requests[2].variation, undefined, 'an empty axis map is the fvar default instance');
+  assert.equal(
+    requests[2].bakedUrl,
+    'https://assets.test/Oxanium.font.glb',
+    'the default instance still discovers its sibling',
+  );
+
+  await loader.load({ source: 'Oxanium.ttf', baked: 'Oxanium-Bold.font.glb', variation: { axes: { wght: 700 } } });
+  assert.equal(requests.length, 4);
+  assert.equal(requests[3].bakedUrl, 'https://assets.test/Oxanium-Bold.font.glb', 'a named artifact is still probed');
+  assert.ok(fetched.includes('https://assets.test/Oxanium-Bold.font.glb'));
+
+  for (const input of [
+    { source: 'Oxanium.font.glb', variation: { axes: { wght: 700 } } },
+    { baked: 'Oxanium.font.glb', variation: { axes: { wght: 700 } } },
+  ]) {
+    assert.throws(
+      () => loader.load(input),
+      (error) => {
+        assert.equal(error.reason, 'INVALID_FONT_INPUT');
+        assert.match(error.message, /a baked artifact carries its own instance/);
+        return true;
+      },
+      'a baked-only request rejects at the call, not through a Promise',
+    );
+  }
+  assert.throws(() => loader.load({ source: 'Oxanium.ttf', variation: { axes: { weight: 700 } } }), {
+    name: 'TypeError',
+    message: /font variation axis tag "weight" must be exactly four printable ASCII bytes/,
+  });
+});
+
+test('a FontFace variation reaches the Worker bake descriptor and separates its load from the default instance', async (t) => {
+  const { source } = await fixturePromise;
+  const baked = await readFile(
+    new URL('../../../../apps/r3f-hello-world/assets/inter-latin.font.glb', import.meta.url),
+  );
+  const originalWorker = globalThis.Worker;
+  const descriptors = [];
+
+  class FixtureWorker {
+    listeners = new Map();
+
+    addEventListener(type, listener) {
+      this.listeners.set(type, listener);
+    }
+
+    postMessage(value, transfer) {
+      descriptors.push(structuredClone(value.font));
+      const received = structuredClone(value, { transfer });
+      queueMicrotask(() => {
+        this.listeners.get('message')?.({
+          data: {
+            type: 'bake-font-result-v0',
+            id: received.id,
+            ok: true,
+            artifacts: [
+              {
+                role: 'font',
+                id: 'fixture-font',
+                bytes: baked.buffer.slice(baked.byteOffset, baked.byteOffset + baked.byteLength),
+                fingerprint: '0'.repeat(32),
+              },
+            ],
+            report: {},
+            warnings: [],
+          },
+        });
+      });
+    }
+
+    terminate() {}
+  }
+
+  globalThis.Worker = FixtureWorker;
+  t.after(() => {
+    globalThis.Worker = originalWorker;
+  });
+
+  const blob = new Blob([source], { type: 'font/ttf' });
+  const bold = glyph.fontFace(blob, {
+    family: 'RuntimeBakeBold',
+    format: bitmap({ strikes: [32] }),
+    variation: { axes: { wght: 700 } },
+  });
+  const regular = glyph.fontFace(blob, { family: 'RuntimeBakeRegular', format: bitmap({ strikes: [32] }) });
+  t.after(() => {
+    regular.dispose();
+    bold.dispose();
+  });
+  await bold.load();
+  await regular.load();
+  assert.deepEqual(descriptors, [
+    { formatVersion: 0, fontFaceIndex: 0, variation: { axes: { wght: 700 } } },
+    { formatVersion: 0, fontFaceIndex: 0 },
+  ]);
+  assert.equal(bold.isLoaded(), true);
+  assert.equal(regular.isLoaded(), true);
+});

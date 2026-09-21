@@ -85,22 +85,25 @@ The package-owned runtime uses Rust 1.97.1, HarfRust 0.12.0 with `default-featur
 
 ### Conditional OpenType-layout tables
 
-| Table                  | Retention rule                                                                                                                                                |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GDEF`                 | Retain when present. It supplies glyph classes, mark attachment classes, mark glyph sets, attachment points, and variation stores referenced by layout.       |
-| `GSUB`                 | Retain when present. All supported scripts, language systems, features, lookups, and feature variations remain intact.                                        |
-| `GPOS`                 | Retain when present. All supported scripts, language systems, features, lookups, anchors, value records, and variation references remain intact.              |
-| `kern`                 | Retain only when present and not made redundant by the bake policy. HarfRust remains authoritative about when legacy kerning applies.                         |
-| `BASE`                 | Retain when present so baseline data survives the shaping artifact even though V0 paragraph layout uses the explicit serialized horizontal metrics.           |
-| `vhea`, `vmtx`, `VORG` | Retain each table exactly when present so vertical advances/origins survive baking. V0 does not fabricate missing tables or expose vertical paragraph layout. |
+| Table                                  | Retention rule                                                                                                                                                                                                     |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GDEF`                                 | Retain when present. It supplies glyph classes, mark attachment classes, mark glyph sets, attachment points, and variation stores referenced by layout.                                                            |
+| `GSUB`                                 | Retain when present. All supported scripts, language systems, features, lookups, and feature variations remain intact.                                                                                             |
+| `GPOS`                                 | Retain when present. All supported scripts, language systems, features, lookups, anchors, value records, and variation references remain intact.                                                                   |
+| `kern`                                 | Retain only when present and not made redundant by the bake policy. HarfRust remains authoritative about when legacy kerning applies.                                                                              |
+| `BASE`                                 | Retain when present so baseline data survives the shaping artifact even though V0 paragraph layout uses the explicit serialized horizontal metrics.                                                                |
+| `vhea`, `vmtx`, `VORG`                 | Retain each table exactly when present so vertical advances/origins survive baking. V0 does not fabricate missing tables or expose vertical paragraph layout.                                                      |
+| `fvar`, `avar`, `HVAR`, `VVAR`, `MVAR` | Retain each table exactly when present. They let HarfRust vary advances and let the engine vary line metrics at the one instance the artifact is pinned to; `gvar` and `cvar` leave with the outlines they modify. |
 
 OpenType extension lookup types are retained inside `GSUB` or `GPOS`; they are not separate tables. All GSUB lookup types 1–8 and GPOS lookup types 1–9 that HarfRust supports remain representable because their original normative table encoding is preserved.
 
 ### Static variation policy
 
-One asset represents one fixed variation instance. The initial fixture is a non-variable static font. Variable input is rejected until the baker can deterministically instantiate outlines, metrics, cmap/layout feature variations, and raster data to the same coordinates.
+One asset represents one fixed variation instance. A variable source is pinned at bake time: the descriptor names user-space axis values keyed by `fvar` tag, the baker normalizes them once through `fvar`/`avar` with Skrifa, and every consumer reads the same normalized F2Dot14 coordinates rather than re-instancing the font. An omitted or empty request bakes the `fvar` default instance; naming an axis a static font lacks is a descriptor error, and the pinned subsetter is not asked to instance anything.
 
-Consequently, V0 shaping payloads MUST NOT contain `fvar`, `avar`, `gvar`, `cvar`, `HVAR`, `VVAR`, `MVAR`, or `STAT`. Adding runtime variation axes is a format revision, not an undocumented optional path. On input, `STAT` alone is accepted because it can describe a static family member without defining an axis; any actual axis or delta table still rejects the source, and `STAT` is dropped from the reduced payload.
+The reduced payload keeps `fvar`, `avar`, `HVAR`, `VVAR`, and `MVAR` and drops `gvar`, `cvar`, and `STAT` with the outlines. Because the outline deltas are gone, a variable source without `HVAR` is rejected: HarfRust would otherwise fall back to `gvar` phantom points to vary advances. The artifact records the resolved instance under `PMNDRS_font.variation` as both the clamped user-space axis map and the normalized coordinates in `fvar` axis order; a static font carries no `variation` object. The shaping engine builds one HarfRust instance from those coordinates per registered font, so `GSUB`/`GPOS` feature variations, `HVAR` advances, and `GDEF` value-record deltas apply at shaping time, while the baker and engine apply `MVAR` to the serialized and engine-read line metrics. Glyph extents and every raster are computed at the same coordinates.
+
+Runtime variation axes remain a format revision, not an undocumented optional path: the coordinates enter the shaping fingerprint, so a different instance is a different font.
 
 ### Excluded tables
 
@@ -145,10 +148,13 @@ characters:
 MurmurHash3-x86-128(
   u32le(sfntByteLength) || sfntBytes
   || u32le(extentsByteLength) || extentsBytes
-  || u32le(extentsAvailabilityByteLength) || extentsAvailabilityBytes,
+  || u32le(extentsAvailabilityByteLength) || extentsAvailabilityBytes
+  [|| "fvar\0" || u32le(coordinateCount) || i16le(coordinate)...],
   seed = 0x73687030
 )
 ```
+
+The bracketed coordinate block is present exactly when the artifact carries `variation`: two instances of one variable font share every retained table byte and differ only there. A static font keeps the original three-block digest.
 
 The baker and runtime-baker calculate the fingerprint. Related artifacts repeat the stamped value, and normal loading
 compares those stamps without hashing payload bytes again. This is a compatibility identity, not a cryptographic
@@ -375,7 +381,7 @@ Registration MUST reject:
 - `glyphIdWidth != 16` for this shaping format;
 - `glyphCount` outside `1..=65535` or any checked dense-array byte calculation that overflows the host/Wasm address space;
 - a run with an invalid ISO 15924 script tag, cluster-level value, language offset, direction, or unknown buffer-flag bit;
-- variable, AAT, Graphite, or deprecated `mort` shaping dependencies;
+- AAT, Graphite, or deprecated `mort` shaping dependencies, or a variable source without `HVAR`;
 - invalid GSUB/GPOS/GDEF references as reported by the pinned font reader;
 - missing/misaligned extents or availability views, nonzero unused availability bits, nonzero bytes for an absent extent, or an extent coordinate outside the serialized i16 range;
 - a payload exceeding configured byte, table-count, glyph-count, or validation-work limits.
