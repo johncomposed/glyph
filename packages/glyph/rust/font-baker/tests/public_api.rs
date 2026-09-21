@@ -38,6 +38,7 @@ fn public_api_rejects_an_unknown_descriptor_version_before_font_parsing() {
         BakeDescriptorV0 {
             format_version: 1,
             font_face_index: 0,
+            variation: None,
         },
     )
     .expect_err("descriptor version 1 must be rejected");
@@ -75,14 +76,14 @@ fn public_api_validates_required_and_unsupported_shaping_tables() {
         BakeErrorCode::MissingTable,
     );
 
-    let mut variable = INTER.to_vec();
-    let cvt = table_record(&variable, *b"cvt ");
-    variable[cvt..cvt + 4].copy_from_slice(b"cvar");
     assert_eq!(
-        bake_font(&variable, BakeDescriptorV0::new(0))
-            .expect_err("a variable-font table must fail")
-            .code,
-        BakeErrorCode::UnsupportedVariableFont,
+        bake_font(
+            INTER,
+            BakeDescriptorV0::new(0).with_variation([("wght".to_owned(), 700.0)])
+        )
+        .expect_err("axes on a static font must fail")
+        .code,
+        BakeErrorCode::InvalidDescriptor,
     );
 
     let mut aat = INTER.to_vec();

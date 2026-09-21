@@ -34,9 +34,12 @@ function typescriptType(value, depth) {
       ([name, property]) =>
         `${childIndentation}readonly ${propertyName(name)}${required.has(name) ? '' : '?'}: ${typescriptType(property, depth + 1)};`,
     );
-    return properties.length === 0
-      ? 'Readonly<Record<string, unknown>>'
-      : `{\n${properties.join('\n')}\n${indentation}}`;
+    if (properties.length === 0) {
+      const additional = value.additionalProperties;
+      const valueType = additional === undefined || additional === true ? 'unknown' : typescriptType(additional, depth);
+      return `Readonly<Record<string, ${valueType}>>`;
+    }
+    return `{\n${properties.join('\n')}\n${indentation}}`;
   }
   if (value.type === 'integer' || value.type === 'number') return 'number';
   if (value.type === 'string') return 'string';

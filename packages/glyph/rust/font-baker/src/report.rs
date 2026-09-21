@@ -1,16 +1,36 @@
 use serde::{Deserialize, Serialize};
-use std::{string::String, vec::Vec};
+use std::{collections::BTreeMap, string::String, vec::Vec};
 
 #[cfg(feature = "compression")]
 use std::io::Write;
 
 use crate::error::{BakeError, BakeErrorCode};
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BakeDescriptorV0 {
     pub format_version: u8,
     pub font_face_index: u32,
+    /// Static variation instance to bake. Omitted or empty means the `fvar` default instance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variation: Option<VariationRequestV0>,
+}
+
+/// Caller-authored variation instance: user-space axis values keyed by four-byte `fvar` tag.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct VariationRequestV0 {
+    pub axes: BTreeMap<String, f32>,
+}
+
+/// The fixed variation instance a baked font represents. Present only for a variable source.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VariationV0 {
+    /// Clamped user-space value of every `fvar` axis, keyed by tag.
+    pub axes: BTreeMap<String, f32>,
+    /// Normalized F2Dot14 bit patterns in `fvar` axis order; HarfRust and Skrifa consume these directly.
+    pub coordinates: Vec<i16>,
 }
 
 impl BakeDescriptorV0 {
@@ -18,7 +38,15 @@ impl BakeDescriptorV0 {
         Self {
             format_version: 0,
             font_face_index,
+            variation: None,
         }
+    }
+
+    pub fn with_variation(mut self, axes: impl IntoIterator<Item = (String, f32)>) -> Self {
+        self.variation = Some(VariationRequestV0 {
+            axes: axes.into_iter().collect(),
+        });
+        self
     }
 
     pub(crate) fn validate(self) -> Result<Self, BakeError> {

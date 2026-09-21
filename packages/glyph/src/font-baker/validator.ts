@@ -354,7 +354,7 @@ async function validateFontSemantics(
   const shapingSfnt = sliceView(bin, shapingView);
   const glyphExtents = sliceView(bin, extentsView);
   const glyphExtentsAvailability = sliceView(bin, availabilityView);
-  validateShapingSfnt(shapingSfnt, metrics);
+  validateShapingSfnt(shapingSfnt, metrics, font.variation);
   validateExtents(glyphExtents, glyphExtentsAvailability, glyphCount);
   const shapingFingerprint = asString(
     shaping.fingerprint,
@@ -437,7 +437,7 @@ function sliceView(bin: Uint8Array, view: ResolvedBufferView): Uint8Array {
   return bin.subarray(view.byteOffset, view.byteOffset + view.byteLength);
 }
 
-function validateShapingSfnt(bytes: Uint8Array, metrics: Readonly<Record<string, unknown>>): void {
+function validateShapingSfnt(bytes: Uint8Array, metrics: Readonly<Record<string, unknown>>, variation: unknown): void {
   if (bytes.byteLength < 12) fail('SFNT_HEADER', 'shaping SFNT is shorter than its offset table');
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const scalerType = view.getUint32(0, false);
@@ -459,9 +459,14 @@ function validateShapingSfnt(bytes: Uint8Array, metrics: Readonly<Record<string,
     'GDEF',
     'GPOS',
     'GSUB',
+    'HVAR',
+    'MVAR',
     'OS/2',
     'VORG',
+    'VVAR',
+    'avar',
     'cmap',
+    'fvar',
     'head',
     'hhea',
     'hmtx',
@@ -528,11 +533,33 @@ function validateShapingSfnt(bytes: Uint8Array, metrics: Readonly<Record<string,
   ) {
     fail('SFNT_METRICS_IDENTITY', 'serialized font identity does not match the shaping SFNT');
   }
+  // A retained `fvar` and a recorded `variation` must appear together, and the recorded
+  // coordinates must cover every axis: the shaper indexes them positionally.
+  const fvar = tables.get('fvar');
+  if (fvar === undefined && variation !== undefined) {
+    fail('FONT_VARIATION_STATIC', 'a static shaping SFNT must not record a variation instance');
+  }
+  if (fvar !== undefined) {
+    if (fvar.byteLength < 16) fail('SFNT_TABLE_LENGTH', 'table fvar is too short');
+    const axisCount = new DataView(fvar.buffer, fvar.byteOffset, fvar.byteLength).getUint16(8, false);
+    const instance = requireNonArrayObject(variation, 'variation', '/extensions/PMNDRS_font/variation');
+    const coordinates = asArray(instance.coordinates, 'coordinates', '/extensions/PMNDRS_font/variation/coordinates');
+    if (coordinates.length !== axisCount) {
+      fail(
+        'FONT_VARIATION_AXES',
+        `variation records ${coordinates.length} coordinates for ${axisCount} fvar axes`,
+        '/extensions/PMNDRS_font/variation/coordinates',
+      );
+    }
+  }
   const useTypoMetrics = (os2.getUint16(62, false) & 0x80) !== 0;
   const ascender = useTypoMetrics ? os2.getInt16(68, false) : hhea.getInt16(4, false);
   const descender = useTypoMetrics ? os2.getInt16(70, false) : hhea.getInt16(6, false);
   const lineGap = useTypoMetrics ? os2.getInt16(72, false) : hhea.getInt16(8, false);
-  if (metrics.ascender !== ascender || metrics.descender !== descender || metrics.lineGap !== lineGap) {
+  // A pinned instance with `MVAR` carries baker-applied deltas on top of these table values;
+  // the Rust baker owns that arithmetic, so only the static selection policy is re-derived here.
+  const varied = fvar !== undefined && tables.has('MVAR');
+  if (!varied && (metrics.ascender !== ascender || metrics.descender !== descender || metrics.lineGap !== lineGap)) {
     fail('SFNT_LINE_METRICS', 'serialized line metrics do not match the V0 selection policy');
   }
 }

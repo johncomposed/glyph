@@ -15,6 +15,7 @@ fuzz_target!(|input: &[u8]| {
     let descriptor = BakeDescriptorV0 {
         format_version: input[0],
         font_face_index: u32::from_le_bytes([input[1], input[2], input[3], input[4]]),
+        variation: None,
     };
     let _ = bake_font(&input[5..], descriptor);
 });
