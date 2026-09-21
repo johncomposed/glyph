@@ -47,6 +47,7 @@ export function createRasterBakeWorkerHost<Kind extends string, Options>(options
           source,
           sourceFingerprint: request.sourceFingerprint,
           fontFaceIndex: request.fontFaceIndex,
+          variationCoordinates: request.variationCoordinates,
           glyphCount: request.font.glyphCount,
           shapingFingerprint: request.font.shapingFingerprint,
           rasterKey: rasterKey(request.rasterKey),

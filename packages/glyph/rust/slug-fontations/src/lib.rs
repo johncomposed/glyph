@@ -32,12 +32,14 @@ impl From<BuildError> for FontOutlineError {
     }
 }
 
-/// Resolve and normalize one font-local glyph into Slug's quadratic geometry.
+/// Resolve and normalize one font-local glyph at `location` into Slug's quadratic geometry.
 ///
-/// CFF cubics use `cubic_subdivisions`; TrueType outlines ignore it.
+/// CFF cubics use `cubic_subdivisions`; TrueType outlines ignore it. A static font, or a
+/// variable font at its default instance, passes an empty location.
 pub fn font_glyph_geometry(
     font: &FontRef<'_>,
     glyph_id: GlyphId,
+    location: LocationRef<'_>,
     band_count: u16,
     cubic_subdivisions: u8,
 ) -> Result<Option<GlyphGeometry>, FontOutlineError> {
@@ -53,7 +55,7 @@ pub fn font_glyph_geometry(
     let mut collector = Collector::new(units_per_em, cubic_subdivisions);
     glyph
         .draw(
-            DrawSettings::unhinted(Size::unscaled(), LocationRef::default()),
+            DrawSettings::unhinted(Size::unscaled(), location),
             &mut collector,
         )
         .map_err(|_| FontOutlineError::Draw)?;
@@ -242,6 +244,7 @@ mod tests {
         let geometry = font_glyph_geometry(
             &font,
             GlyphId::new(43),
+            LocationRef::default(),
             DEFAULT_BAND_COUNT,
             DEFAULT_CUBIC_SUBDIVISIONS,
         )
@@ -261,6 +264,7 @@ mod tests {
                 font_glyph_geometry(
                     &font,
                     GlyphId::new(u32::from(raw_id)),
+                    LocationRef::default(),
                     DEFAULT_BAND_COUNT,
                     DEFAULT_CUBIC_SUBDIVISIONS,
                 )

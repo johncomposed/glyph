@@ -41,6 +41,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 pmndrs_glyph_raster_artifact::SOURCE_FINGERPRINT_V0,
             ),
             font_face_index: 0,
+            variation_coordinates: Vec::new(),
             glyph_count,
             shaping_fingerprint,
             raster_key,

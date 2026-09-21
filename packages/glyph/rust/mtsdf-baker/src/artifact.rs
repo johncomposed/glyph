@@ -9,7 +9,10 @@ use pmndrs_glyph_mtsdf_fontations::{font_outline_source, glyph_count};
 use pmndrs_glyph_raster_artifact::{
     ABSENT_PAGE, AtlasPage, GlyphRecordTable, RasterizedPage, resolve_raster_coverage,
 };
-use skrifa::{FontRef, GlyphId, MetadataProvider};
+use skrifa::{
+    FontRef, GlyphId, MetadataProvider,
+    instance::{LocationRef, NormalizedCoord},
+};
 
 #[cfg(feature = "profiling")]
 use crate::profile::{BakePhase, BakeProfiler, PhaseTimer};
@@ -93,6 +96,7 @@ fn bake_mtsdf_internal(
     let rasterized = rasterize_font(
         source,
         request.font_face_index,
+        &request.variation_coordinates,
         request.glyph_count,
         settings,
         request.descriptor.coverage.as_ref(),
@@ -215,6 +219,7 @@ fn artifact_fingerprint(bytes: &[u8]) -> String {
 fn rasterize_font(
     source: &[u8],
     face_index: u32,
+    variation_coordinates: &[i16],
     expected_glyph_count: u16,
     settings: MtsdfBakeSettingsV0,
     requested_coverage: Option<&pmndrs_glyph_raster_artifact::RasterCoverageV0>,
@@ -228,6 +233,12 @@ fn rasterize_font(
     let (font, actual_glyph_count, coverage) =
         select_font(source, face_index, expected_glyph_count, requested_coverage)?;
 
+    let coords = variation_coordinates
+        .iter()
+        .copied()
+        .map(NormalizedCoord::from_bits)
+        .collect::<Vec<_>>();
+    let location = LocationRef::new(&coords);
     let mut records = GlyphRecordTable::new(actual_glyph_count)?;
     let mut pages = Vec::new();
     pages
@@ -254,7 +265,7 @@ fn rasterize_font(
         crate::progress::report(selected_index, u32::from(progress_total));
         selected_index = selected_index.saturating_add(1);
         let glyph_id = GlyphId::new(u32::from(raw_glyph_id));
-        let Some(source) = font_outline_source(&font, glyph_id) else {
+        let Some(source) = font_outline_source(&font, glyph_id, location) else {
             records.mark_absent(raw_glyph_id)?;
             continue;
         };
@@ -601,6 +612,7 @@ mod tests {
         let rasterized = rasterize_font(
             INTER,
             0,
+            &[],
             2937,
             MtsdfBakeSettingsV0::DEFAULT,
             Some(&coverage),
@@ -642,6 +654,7 @@ mod tests {
                 pmndrs_glyph_raster_artifact::SOURCE_FINGERPRINT_V0,
             ),
             font_face_index: 0,
+            variation_coordinates: Vec::new(),
             glyph_count: 2937,
             shaping_fingerprint: SHAPING_FINGERPRINT.into(),
             raster_key,
@@ -758,6 +771,7 @@ mod tests {
         let rasterized = rasterize_font(
             INTER,
             0,
+            &[],
             2937,
             settings,
             None,

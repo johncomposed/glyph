@@ -5,7 +5,7 @@ use std::{
 };
 
 use pmndrs_glyph_mtsdf_admission::{font_outline_source, glyph_count};
-use skrifa::{FontRef, GlyphId, outline::OutlinePen};
+use skrifa::{FontRef, GlyphId, instance::LocationRef, outline::OutlinePen};
 
 fn main() -> ExitCode {
     match run() {
@@ -28,7 +28,7 @@ fn run() -> Result<(), String> {
     writeln!(output, "pmndrs-mtsdf-font-requests-v0\t{count}").map_err(write_error)?;
     for raw_glyph_id in 0..count {
         let glyph_id = GlyphId::new(u32::from(raw_glyph_id));
-        let Some(source) = font_outline_source(&font, glyph_id) else {
+        let Some(source) = font_outline_source(&font, glyph_id, LocationRef::default()) else {
             writeln!(output, "s\t{raw_glyph_id}").map_err(write_error)?;
             continue;
         };

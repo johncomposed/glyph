@@ -81,6 +81,8 @@ interface RuntimeRasterBakeRequestBase {
   readonly sourceFingerprint: Fingerprint;
   readonly font: RasterDecodeFont;
   readonly fontFaceIndex: number;
+  /** Normalized F2Dot14 coordinates the font's shaping payload is pinned to; empty for a static font. */
+  readonly variationCoordinates: readonly number[];
   readonly rasterKey: RasterKey | string;
   readonly signal?: AbortSignal;
   readonly onProgress?: BakeProgressListener;

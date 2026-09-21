@@ -103,6 +103,8 @@ test('compiled Wasm retains ordered font stacks and prevents dangling font dispo
       allocations[1].length,
       allocations[2].pointer,
       allocations[2].length,
+      0,
+      0,
     ),
     abi.status.ok,
   );
@@ -381,6 +383,8 @@ function registerValidatedFont({ abi, fn, memory }, handle, validated) {
       allocations[1].length,
       allocations[2].pointer,
       allocations[2].length,
+      0,
+      0,
     ),
     abi.status.ok,
   );

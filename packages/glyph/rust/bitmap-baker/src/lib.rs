@@ -84,6 +84,7 @@ pub fn bake_bitmap(
         let strike = rasterize::rasterize_strike(
             source,
             request.font_face_index,
+            &request.variation_coordinates,
             request.glyph_count,
             ppem,
             coverage.as_ref(),
@@ -261,6 +262,7 @@ mod tests {
                 pmndrs_glyph_raster_artifact::SOURCE_FINGERPRINT_V0,
             ),
             font_face_index: 0,
+            variation_coordinates: Vec::new(),
             glyph_count: 2937,
             shaping_fingerprint: SHAPING_FINGERPRINT.into(),
             raster_key: descriptor_raster_key(&descriptor),

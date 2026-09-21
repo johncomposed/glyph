@@ -15,6 +15,7 @@ import {
   type ImmutableFontVariant,
 } from './loaded-font.js';
 import type { SerializedFontFace } from './font-face-transfer.js';
+import type { FontVariationRequest } from './font-baker/index.js';
 import { readBufferViews, readRuntimeFontArtifact, type RuntimeFontArtifact } from './internal/font-artifact-reader.js';
 import { readGlb, type ParsedGlb } from './internal/glb-reader.js';
 import type { FontHandle, FontKey, RasterHandle, RasterKey, Fingerprint } from './identity.js';
@@ -151,6 +152,8 @@ export interface RuntimeFontBakeRequest {
   /** Persistent derived-artifact lifetime inherited from the source response. Omitted means memory-only. */
   readonly cache?: { readonly expiresAt: number };
   readonly unicodeRanges?: readonly RuntimeBakeUnicodeRange[];
+  /** Static instance to pin a variable source to; omitted means the `fvar` default instance. */
+  readonly variation?: FontVariationRequest;
   readonly rasters?: readonly RuntimeBakeRaster[];
   readonly signal?: AbortSignal;
   readonly onProgress?: BakeProgressListener;
@@ -332,6 +335,7 @@ export class FontRegistry {
       shapingSfnt: artifact.shapingSfnt,
       glyphExtents: artifact.glyphExtents,
       glyphExtentsAvailability: artifact.glyphExtentsAvailability,
+      variationCoordinates: artifact.variationCoordinates,
       rasterSources,
       resources: new Map(),
       unicodeVersion: string(provenance.unicodeVersion, 'provenance.unicodeVersion'),
@@ -1500,6 +1504,7 @@ async function runtimeBakeFormat<
     sourceFingerprint: registered.sourceFingerprint,
     font,
     fontFaceIndex: registered.fontFaceIndex,
+    variationCoordinates: registered.variationCoordinates,
     rasterKey,
     signal,
   });

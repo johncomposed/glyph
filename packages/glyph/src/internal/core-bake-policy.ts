@@ -1,11 +1,11 @@
-import type { FontBakeDescriptor } from '../font-baker/index.js';
+import type { FontBakeDescriptor, FontVariationRequest } from '../font-baker/index.js';
 
 interface CoreFontArtifact {
   readonly role: 'font';
 }
 
-export function fontBakeDescriptor(fontFaceIndex: number): FontBakeDescriptor {
-  return { formatVersion: 0, fontFaceIndex };
+export function fontBakeDescriptor(fontFaceIndex: number, variation?: FontVariationRequest): FontBakeDescriptor {
+  return { formatVersion: 0, fontFaceIndex, ...(variation === undefined ? {} : { variation }) };
 }
 
 export function soleCoreFontArtifact<Artifact extends CoreFontArtifact>(result: {

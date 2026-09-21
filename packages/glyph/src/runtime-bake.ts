@@ -28,7 +28,7 @@ const host = new SerialWorkerHost<
         type: 'bake-font-v0',
         id,
         source,
-        font: fontBakeDescriptor(0),
+        font: fontBakeDescriptor(0, request.variation),
         ...(request.cache === undefined ? {} : { cache: request.cache }),
         ...(request.unicodeRanges === undefined
           ? {}
