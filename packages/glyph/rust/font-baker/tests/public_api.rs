@@ -179,3 +179,107 @@ fn baked_metrics_carry_underline_and_strikeout_values() {
     assert_eq!(metrics["strikeoutPosition"], 671);
     assert_eq!(metrics["strikeoutSize"], 140);
 }
+
+const OXANIUM: &[u8] =
+    include_bytes!("../../../../../benches/fixtures/fonts/oxanium-wght/Oxanium[wght].ttf");
+
+#[test]
+fn variable_fonts_bake_to_one_pinned_instance() {
+    let default = bake_font(OXANIUM, BakeDescriptorV0::new(0)).expect("default instance");
+    let semibold = bake_font(
+        OXANIUM,
+        BakeDescriptorV0::new(0).with_variation([("wght".to_owned(), 700.0)]),
+    )
+    .expect("wght=700 instance");
+    let clamped = bake_font(
+        OXANIUM,
+        BakeDescriptorV0::new(0).with_variation([("wght".to_owned(), 900.0)]),
+    )
+    .expect("wght=900 clamps to the axis maximum");
+    let maximum = bake_font(
+        OXANIUM,
+        BakeDescriptorV0::new(0).with_variation([("wght".to_owned(), 800.0)]),
+    )
+    .expect("wght=800 instance");
+
+    let tables = |result: &pmndrs_glyph_font_baker::BakeResultV0| {
+        result
+            .report
+            .shared
+            .shaping
+            .tables
+            .iter()
+            .map(|table| table.tag.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        tables(&semibold),
+        [
+            "GDEF", "GPOS", "GSUB", "HVAR", "OS/2", "avar", "cmap", "fvar", "head", "hhea", "hmtx",
+            "maxp"
+        ]
+    );
+    // Same retained bytes, different instance: only the coordinates separate these identities.
+    assert_eq!(tables(&default), tables(&semibold));
+    assert_ne!(default.artifacts[0].id, semibold.artifacts[0].id);
+    assert_eq!(clamped.artifacts[0].id, maximum.artifacts[0].id);
+    assert_ne!(clamped.artifacts[0].id, semibold.artifacts[0].id);
+
+    let document = |result: &pmndrs_glyph_font_baker::BakeResultV0| -> serde_json::Value {
+        let bytes = &result.artifacts[0].bytes;
+        let json_len = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
+        serde_json::from_slice(&bytes[20..20 + json_len]).unwrap()
+    };
+    let variation = |result| document(result)["extensions"]["PMNDRS_font"]["variation"].clone();
+    assert_eq!(
+        variation(&default),
+        serde_json::json!({ "axes": { "wght": 200.0 }, "coordinates": [0] })
+    );
+    assert_eq!(
+        variation(&semibold),
+        serde_json::json!({ "axes": { "wght": 700.0 }, "coordinates": [12489] })
+    );
+    assert_eq!(variation(&clamped)["axes"]["wght"], 800.0);
+    assert_eq!(
+        bake_font(
+            OXANIUM,
+            BakeDescriptorV0::new(0).with_variation([("wdth".to_owned(), 100.0)]),
+        )
+        .expect_err("an axis the font lacks must fail")
+        .code,
+        BakeErrorCode::InvalidDescriptor,
+    );
+}
+
+#[cfg(feature = "subsetting")]
+#[test]
+fn a_prepared_variable_subset_still_bakes_at_the_requested_instance() {
+    use pmndrs_glyph_font_baker::{FontSelectionV0, UnicodeRangeV0, prepare_font};
+    let prepared = prepare_font(
+        OXANIUM,
+        FontSelectionV0 {
+            format_version: 0,
+            font_face_index: 0,
+            unicode_ranges: vec![UnicodeRangeV0 {
+                start: 0x20,
+                end: 0x7E,
+            }],
+        },
+    )
+    .expect("ASCII subset of a variable font");
+    let baked = bake_font(
+        &prepared.bytes,
+        BakeDescriptorV0::new(0).with_variation([("wght".to_owned(), 700.0)]),
+    )
+    .expect("subset instance");
+    assert!(
+        baked
+            .report
+            .shared
+            .shaping
+            .tables
+            .iter()
+            .any(|table| table.tag == "HVAR")
+    );
+    assert!(prepared.report.glyph_count < 375);
+}

@@ -1,6 +1,6 @@
 use harfrust::{
     BufferFlags, Direction, Feature, FontRef, Language, Script, ShapeOptions, ShaperData,
-    UnicodeBuffer,
+    ShaperInstance, UnicodeBuffer, Variation,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -23,6 +23,9 @@ struct SegmentProperties {
     script: String,
     language: String,
     features: Vec<String>,
+    /// Variable-font axis settings such as `wght=700`; empty shapes the default instance.
+    #[serde(default)]
+    variations: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -40,6 +43,8 @@ struct Case {
     language: Option<String>,
     #[serde(default)]
     features: Option<Vec<String>>,
+    #[serde(default)]
+    variations: Option<Vec<String>>,
     #[serde(default = "default_true")]
     oracle: bool,
 }
@@ -78,7 +83,6 @@ fn run() -> Result<(), String> {
     let font_bytes = fs::read(&font_path).map_err(|error| error.to_string())?;
     let font = FontRef::new(&font_bytes).map_err(|error| error.to_string())?;
     let shaper_data = ShaperData::new(&font);
-    let shaper = shaper_data.shaper(&font).build();
     let corpus: Corpus =
         serde_json::from_slice(&fs::read(&cases_path).map_err(|error| error.to_string())?)
             .map_err(|error| error.to_string())?;
@@ -90,7 +94,7 @@ fn run() -> Result<(), String> {
         .cases
         .iter()
         .filter(|case| case.oracle)
-        .map(|case| shape_case(&shaper, &corpus.defaults, case))
+        .map(|case| shape_case(&font, &shaper_data, &corpus.defaults, case))
         .collect::<Result<Vec<_>, _>>()?;
     let document = json!({
         "schemaVersion": 0,
@@ -115,7 +119,8 @@ fn run() -> Result<(), String> {
 }
 
 fn shape_case(
-    shaper: &harfrust::Shaper<'_>,
+    font: &FontRef<'_>,
+    shaper_data: &ShaperData,
     defaults: &SegmentProperties,
     case: &Case,
 ) -> Result<Value, String> {
@@ -137,6 +142,16 @@ fn shape_case(
         .iter()
         .map(|feature| Feature::from_str(feature).map_err(str::to_owned))
         .collect::<Result<Vec<_>, _>>()?;
+    let variation_sources = case.variations.as_ref().unwrap_or(&defaults.variations);
+    let variations = variation_sources
+        .iter()
+        .map(|variation| Variation::from_str(variation).map_err(str::to_owned))
+        .collect::<Result<Vec<_>, _>>()?;
+    // The instance normalizes user-space settings through the font's own `fvar`/`avar`, so the
+    // reduced shaping payload and the source font agree as long as those tables survive.
+    let instance =
+        (!variations.is_empty()).then(|| ShaperInstance::from_variations(font, variations));
+    let shaper = shaper_data.shaper(font).instance(instance.as_ref()).build();
 
     let mut buffer = UnicodeBuffer::new();
     let mut utf16_offset = 0_u32;
@@ -166,15 +181,19 @@ fn shape_case(
             })
         })
         .collect::<Vec<_>>();
+    let mut segment = json!({
+        "direction": direction,
+        "script": script,
+        "language": language,
+        "features": feature_sources
+    });
+    if !variation_sources.is_empty() {
+        segment["variations"] = json!(variation_sources);
+    }
     Ok(json!({
         "id": case.id,
         "text": case.text,
-        "segment": {
-            "direction": direction,
-            "script": script,
-            "language": language,
-            "features": feature_sources
-        },
+        "segment": segment,
         "glyphs": glyphs
     }))
 }

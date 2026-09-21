@@ -8,6 +8,11 @@
   `VVAR`, and `MVAR` now survive in the shaping payload; a variable source without `HVAR` is rejected. See D-371 in
   [the decision register](planning/decision-register.md) and the [shaping contract](planning/shaping-data-contract.md).
 
+- **Pinned Oxanium as the variable-font fixture** — Added the authenticated Google Fonts Oxanium `wght` source from
+  issue #99 with a manifest pinned at `wght=700`, a shaping corpus whose oracles carry axis settings, and end-to-end
+  proof that the reduced payload without `gvar` shapes exactly like HarfBuzz 13 and HarfRust at that instance. Both
+  oracle generators and the manifest re-pin now honor variation settings. See [the benchmark reference](packages/benchmarks.md).
+
 ## 2026-09-18
 
 - **Added tagged stable publishing alongside canaries** — Extended the existing npm publishing workflow so matching

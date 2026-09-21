@@ -1231,3 +1231,32 @@ test('measured f32 extents reproduce exactly at every pinned width', async () =>
   }
   assert.equal(fn.disposeRoot(31), abi.status.ok);
 });
+
+test('a pinned variable instance registers its coordinates beside the three shaping views', async () => {
+  const [source, bakerWasm, shaperWasm] = await Promise.all([
+    readFile(new URL('../../../../benches/fixtures/fonts/oxanium-wght/Oxanium[wght].ttf', import.meta.url)),
+    readFile(new URL('../../dist/font-baker.wasm', import.meta.url)),
+    readFile(shaperWasmUrl),
+  ]);
+  const baker = await createFontBaker(bakerWasm);
+  const artifact = baker.bake({
+    source,
+    descriptor: { formatVersion: 0, fontFaceIndex: 0, variation: { axes: { wght: 700 } } },
+  }).artifacts[0].bytes;
+  const validated = await validateFontArtifact(artifact);
+  assert.deepEqual(validated.document.extensions.PMNDRS_font.variation, { axes: { wght: 700 }, coordinates: [12489] });
+  const registry = new FontRegistry();
+  const font = await registry.registerAsset(artifact);
+  const shaper = await createRuntimeShaper({ registry, wasm: shaperWasm });
+  shaper.registerFont(font);
+  // One fvar axis is one little-endian i16 beside the SFNT, extents, and availability bytes.
+  assert.equal(
+    shaper.memoryReport().retainedFontBytes,
+    validated.shapingSfnt.byteLength +
+      validated.glyphExtents.byteLength +
+      validated.glyphExtentsAvailability.byteLength +
+      2,
+  );
+  font.dispose();
+  shaper.dispose();
+});
