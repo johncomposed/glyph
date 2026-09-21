@@ -2,6 +2,11 @@
 
 ## 2026-09-21
 
+- **Forwarded FontFace variation to runtime baking** — `glyph.fontFace(source, { variation })` and the loader's
+  source override now carry user-space axis values to the Worker bake descriptor, key shared loads and CacheStorage
+  entries by the instance, and skip implicit baked-sibling discovery for a pinned instance; baked artifacts and
+  transferred faces reject the option. See [the glyph package reference](packages/glyph.md).
+
 - **Pinned variable fonts to one baked instance** — The bake descriptor accepts user-space axis values, the baker
   records the resolved `PMNDRS_font.variation` instance, and the shaper, extents, line metrics, and every raster read
   the same normalized coordinates instead of rewriting the source through the subsetter. `fvar`, `avar`, `HVAR`,

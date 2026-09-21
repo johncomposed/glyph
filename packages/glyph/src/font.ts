@@ -1,5 +1,6 @@
 import type { RasterLoadOptions, RasterReference, RasterSelection, RegisteredRaster } from './raster.js';
 import type { RasterFormatMetadata } from './config/raster-format.js';
+import type { FontVariationRequest } from './font-baker/index.js';
 import type { FontHandle, FontKey, RasterKey, Fingerprint } from './identity.js';
 
 /** Renderer-independent metrics expressed in font units. */
@@ -61,6 +62,11 @@ export interface FontSourceOverride {
   readonly source: string | URL | FontBytesInput;
   /** Explicitly set null to skip baked-sibling discovery for this load. */
   readonly baked?: string | URL | FontBytesInput | null;
+  /**
+   * Static instance to bake a variable source at; omitted means the `fvar` default instance. One implicit baked sibling
+   * holds one instance, so a request that names an instance without naming `baked` skips sibling discovery.
+   */
+  readonly variation?: FontVariationRequest;
 }
 
 /** Baked-only font input that performs no source-sibling discovery. */

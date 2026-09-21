@@ -1,13 +1,16 @@
-import type { Font } from './font.js';
+import type { Font, FontBytesInput } from './font.js';
 import { cloneImmutableFont } from './loaded-font.js';
 import {
   GlyphFontError,
+  fontVariationRequiresSource,
   openFontFaceSource,
   openSerializedFontFaceSource,
   type FontFaceSourceLease,
   type FontLibrary,
   type LoadFontInput,
 } from './loader.js';
+import type { FontVariationRequest } from './font-baker/index.js';
+import { normalizeFontVariation } from './internal/font-variation.js';
 import type { FontFaceTransfer, SerializedFontFace } from './font-face-transfer.js';
 import {
   claimSerializedFontFace,
@@ -55,10 +58,16 @@ export type FontFaceDeclaredFormat<Declaration> = Declaration extends readonly F
   ? Declaration[number]
   : Extract<Declaration, FontFaceFormat>;
 
-/** Optional identity and format assertion for one FontFace source. */
+/** Optional identity, format assertion, and bake-time instance for one FontFace source. */
 export type FontFaceConfig<Declaration = FontFaceFormatDeclaration> = {
   readonly family?: string;
   readonly format?: FontFaceFormatInput<Declaration>;
+  /**
+   * Pin a variable source to one static instance by user-space `fvar` axis values, for example
+   * `{ axes: { wght: 700 } }`. The instance is baked at runtime, so the face skips baked-sibling discovery; omitted
+   * means the `fvar` default instance. A baked artifact or transferred face already carries its instance.
+   */
+  readonly variation?: FontVariationRequest;
 };
 
 type RasterOfFormat<Format> = Format extends RasterFormatMetadata
@@ -133,9 +142,14 @@ interface FontFaceResourceOwner {
   disposed: boolean;
 }
 
-interface FontFaceState {
-  readonly library: FontLibrary;
+/** Source plus the bake-time instance one FontFace declared for it. */
+interface FontFaceDeclaredSource {
   readonly source: FontFaceSource;
+  readonly variation: FontVariationRequest | undefined;
+}
+
+interface FontFaceState extends FontFaceDeclaredSource {
+  readonly library: FontLibrary;
   readonly family: string;
   readonly formats: readonly FontFaceFormat[];
   readonly owner: FontFaceResourceOwner;
@@ -164,7 +178,7 @@ interface FinalizerRecord {
 }
 
 const faceStates = new WeakMap<object, FontFaceSelectionState>();
-const blobInputs = new WeakMap<Blob, Promise<LoadFontInput>>();
+const blobInputs = new WeakMap<Blob, Promise<BlobFontBytes>>();
 const catalog = new Map<string, CatalogEntry>();
 let nextGeneratedFamily = 1;
 let nextCatalogGeneration = 1;
@@ -190,6 +204,12 @@ export function createFontFace(library: FontLibrary, source: FontFaceSource, con
   if (existing !== undefined && !existing.disposed) {
     throw new Error(`FontFace family ${JSON.stringify(family)} already exists`);
   }
+  const variation = normalizeFontVariation(config.variation, 'FontFace variation');
+  if (variation !== undefined && isSerializedFontFace(source)) {
+    throw new TypeError(
+      'FontFace variation cannot apply to a SerializedFontFace; the transfer carries its baked instance',
+    );
+  }
   const ownedSource = isSerializedFontFace(source) ? claimSerializedFontFace(source) : source;
 
   const formats = formatList(config.format);
@@ -204,6 +224,7 @@ export function createFontFace(library: FontLibrary, source: FontFaceSource, con
   const state: FontFaceState = {
     library,
     source: ownedSource,
+    variation,
     family,
     formats,
     owner,
@@ -468,7 +489,7 @@ async function cloneFontFace(selection: FontFaceSelection): Promise<FontFaceTran
   const source = await ensureFontFaceSource(
     selected.face.owner,
     selected.face.library,
-    selected.face.source,
+    selected.face,
     selected.face.formats.map(resolveDeclaredFormat),
   );
   const serialized = await source.snapshot(fonts);
@@ -478,7 +499,7 @@ async function cloneFontFace(selection: FontFaceSelection): Promise<FontFaceTran
 async function loadAllFontFaceFormats(state: FontFaceState): Promise<void> {
   const owner = state.owner;
   const declared = state.formats.map(resolveDeclaredFormat);
-  const source = await ensureFontFaceSource(owner, state.library, state.source, declared);
+  const source = await ensureFontFaceSource(owner, state.library, state, declared);
   const operations: Promise<readonly Font<RasterFormatMetadata>[]>[] = [
     ...declared.map((raster) => source.load(raster).then((font) => [font])),
     source.loadAdvertised(declared.map(rasterOf)),
@@ -553,7 +574,7 @@ function loadFontFaceFormat(
       selected.face.owner,
       selected.face.family,
       selected.face.library,
-      selected.face.source,
+      selected.face,
       raster,
       format,
     );
@@ -576,12 +597,12 @@ function createLoadedFaceRecord(
   owner: FontFaceResourceOwner,
   family: string,
   library: FontLibrary,
-  fontSource: FontFaceSource,
+  declared: FontFaceDeclaredSource,
   raster: RasterFormatInput<RasterFormatMetadata>,
   format: RasterFormatMetadata,
 ): LoadedFaceRecord {
   let record!: LoadedFaceRecord;
-  const promise = ensureFontFaceSource(owner, library, fontSource, [raster])
+  const promise = ensureFontFaceSource(owner, library, declared, [raster])
     .then((source) => source.load(raster))
     .then(
       (font) => {
@@ -617,7 +638,7 @@ function fontFaceFormats(face: FontFace): Promise<readonly string[]> {
   const state = selected.face;
   if (state.formatsPromise !== undefined) return state.formatsPromise;
   let promise!: Promise<readonly string[]>;
-  promise = ensureFontFaceSource(state.owner, state.library, state.source, []).then(
+  promise = ensureFontFaceSource(state.owner, state.library, state, []).then(
     (source) => source.formats,
     (error: unknown) => {
       if (state.formatsPromise === promise) state.formatsPromise = undefined;
@@ -631,14 +652,14 @@ function fontFaceFormats(face: FontFace): Promise<readonly string[]> {
 function ensureFontFaceSource(
   owner: FontFaceResourceOwner,
   library: FontLibrary,
-  fontSource: FontFaceSource,
+  declared: FontFaceDeclaredSource,
   initialRasters: readonly RasterFormatInput<RasterFormatMetadata>[],
 ): Promise<FontFaceSourceLease> {
   if (owner.sourcePromise !== undefined) return owner.sourcePromise;
   const controller = new AbortController();
   owner.sourceController = controller;
   let promise!: Promise<FontFaceSourceLease>;
-  promise = openDeclaredFontFaceSource(library, fontSource, initialRasters, controller.signal).then(
+  promise = openDeclaredFontFaceSource(library, declared, initialRasters, controller.signal).then(
     (source) => {
       if (owner.disposed || owner.sourcePromise !== promise) {
         source.dispose();
@@ -661,12 +682,15 @@ function ensureFontFaceSource(
 
 function openDeclaredFontFaceSource(
   library: FontLibrary,
-  source: FontFaceSource,
+  declared: FontFaceDeclaredSource,
   initialRasters: readonly RasterFormatInput<RasterFormatMetadata>[],
   signal: AbortSignal,
 ): Promise<FontFaceSourceLease> {
+  const { source } = declared;
   if (isSerializedFontFace(source)) return openSerializedFontFaceSource(library, source, { signal });
-  return fontFaceLoadInput(source).then((input) => openFontFaceSource(library, input, initialRasters, { signal }));
+  return fontFaceLoadInput(source, declared.variation).then((input) =>
+    openFontFaceSource(library, input, initialRasters, { signal }),
+  );
 }
 
 function isFontFaceLoaded(face: FontFace): boolean {
@@ -775,12 +799,13 @@ function assertFontFaceConfig(config: unknown): asserts config is FontFaceConfig
     throw new TypeError('FontFace config must be an object');
   }
   const keys = Object.keys(config);
-  if (keys.some((key) => key !== 'family' && key !== 'format')) {
-    throw new TypeError('FontFace config only accepts family and format');
+  if (keys.some((key) => key !== 'family' && key !== 'format' && key !== 'variation')) {
+    throw new TypeError('FontFace config only accepts family, format, and variation');
   }
   const family = Reflect.get(config, 'family');
   if (family !== undefined) normalizedFamily(family);
   formatList(Reflect.get(config, 'format'));
+  normalizeFontVariation(Reflect.get(config, 'variation'), 'FontFace variation');
 }
 
 function assertFontFaceSource(source: unknown): asserts source is FontFaceSource {
@@ -790,19 +815,37 @@ function assertFontFaceSource(source: unknown): asserts source is FontFaceSource
   throw new TypeError('FontFace source must be a URL, Blob, or SerializedFontFace');
 }
 
-function fontFaceLoadInput(source: FontFaceSource): Promise<LoadFontInput> {
-  if (isSerializedFontFace(source)) throw new TypeError('SerializedFontFace uses the transfer loader');
-  if (typeof source === 'string' || source instanceof URL) return Promise.resolve(source);
+function fontFaceLoadInput(
+  source: Exclude<FontFaceSource, SerializedFontFace>,
+  variation: FontVariationRequest | undefined,
+): Promise<LoadFontInput> {
+  if (typeof source === 'string' || source instanceof URL) {
+    return Promise.resolve(variation === undefined ? source : { source, variation });
+  }
+  return blobFontBytes(source).then(({ bytes, runtimeSource }) => {
+    if (runtimeSource) return variation === undefined ? { source: bytes } : { source: bytes, variation };
+    if (variation !== undefined) throw fontVariationRequiresSource();
+    return { baked: bytes };
+  });
+}
+
+/** Bytes read once per Blob; `ownership: 'copy'` lets every declaring face take its own copy in the loader. */
+interface BlobFontBytes {
+  readonly bytes: FontBytesInput;
+  /** A font-typed or font-named Blob is source to bake; anything else is a baked artifact. */
+  readonly runtimeSource: boolean;
+}
+
+function blobFontBytes(source: Blob): Promise<BlobFontBytes> {
   const existing = blobInputs.get(source);
   if (existing !== undefined) return existing;
-  let pending!: Promise<LoadFontInput>;
+  let pending!: Promise<BlobFontBytes>;
   pending = source.arrayBuffer().then(
     (buffer) => {
-      const bytes = { bytes: new Uint8Array(buffer), ownership: 'copy' as const };
       const name = 'name' in source && typeof source.name === 'string' ? source.name : '';
       const runtimeSource =
         /\.(?:otf|ttf)$/iu.test(name) || /^(?:font\/(?:otf|ttf)|application\/x-font-(?:otf|ttf))$/iu.test(source.type);
-      return runtimeSource ? { source: bytes } : { baked: bytes };
+      return { bytes: { bytes: new Uint8Array(buffer), ownership: 'copy' }, runtimeSource };
     },
     (error: unknown) => {
       if (blobInputs.get(source) === pending) blobInputs.delete(source);

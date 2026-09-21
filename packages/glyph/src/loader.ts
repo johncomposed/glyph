@@ -39,6 +39,7 @@ import type {
 } from './raster.js';
 import type { BakeProgressListener, RasterBakeArtifact } from './bake.js';
 import { normalizeUnicodeRanges } from './internal/font-selection.js';
+import { normalizeFontVariation } from './internal/font-variation.js';
 import { canonicalJson, compatibilityFingerprint, deriveRasterKey } from './internal/raster-identity.js';
 import type { RuntimeBakeRaster, RuntimeBakeUnicodeRange } from './internal/runtime-bake-protocol.js';
 import { workerRasterKinds } from './internal/runtime-bake-protocol.js';
@@ -631,6 +632,7 @@ export class FontLoader {
       source,
       sourceUrl: sourceLabel,
       ...(request.bakedUrl === undefined ? {} : { bakedUrl: request.bakedUrl }),
+      ...(request.variation === undefined ? {} : { variation: request.variation }),
       ...(sourceResponse.expiresAt === undefined ? {} : { cache: { expiresAt: sourceResponse.expiresAt } }),
       signal,
     });
@@ -1579,6 +1581,7 @@ function ownFontInputBytes(input: FontInput): FontInput {
   return {
     source: own(value.source),
     ...(value.baked === undefined ? {} : { baked: value.baked === null ? null : own(value.baked) }),
+    ...(value.variation === undefined ? {} : { variation: value.variation }),
   };
 }
 
@@ -1688,6 +1691,8 @@ async function loadDefaultRuntimeBake(sourceUrl: string): Promise<RuntimeFontBak
 interface ResolvedFontRequest {
   readonly sourceUrl?: string;
   readonly sourceBytes?: FontBytesInput;
+  /** Instance the runtime bake pins a variable source to; absent for a baked-only request. */
+  readonly variation?: FontVariationRequest;
   readonly bakedUrl?: string;
   readonly bakedBytes?: FontBytesInput;
 }
@@ -2268,6 +2273,21 @@ function rasterSource(value: Record<string, unknown>, path: string): RasterRefer
 
 function resolveFontRequest(input: FontInput, baseUrl: URL | undefined): ResolvedFontRequest {
   const value = normalizeFontInput(input);
+  const resolved = resolveFontLocations(value, baseUrl);
+  if (value.variation === undefined) return resolved;
+  if (resolved.sourceUrl === undefined && resolved.sourceBytes === undefined) throw fontVariationRequiresSource();
+  return { ...resolved, variation: value.variation };
+}
+
+/** @internal A baked artifact carries its own instance, so a variation can only steer a source bake. */
+export function fontVariationRequiresSource(): GlyphFontError {
+  return new GlyphFontError(
+    'INVALID_FONT_INPUT',
+    'font variation requires a source font to bake; a baked artifact carries its own instance',
+  );
+}
+
+function resolveFontLocations(value: NormalizedFontInput, baseUrl: URL | undefined): ResolvedFontRequest {
   if (value.source === undefined) {
     if (isFontBytesInput(value.baked)) return { bakedBytes: value.baked };
     return { bakedUrl: normalizeUrl(value.baked!, baseUrl) };
@@ -2285,6 +2305,8 @@ function resolveFontRequest(input: FontInput, baseUrl: URL | undefined): Resolve
     return { sourceUrl: source, bakedUrl: normalizeUrl(value.baked, baseUrl) };
   }
   if (/\.glb$/i.test(sourceUrl.pathname)) return { bakedUrl: source };
+  // One implicit sibling holds one instance; a requested instance bakes at runtime unless the caller named the artifact.
+  if (value.variation !== undefined) return { sourceUrl: source };
   if (!isHierarchical(sourceUrl)) return { sourceUrl: source };
   sourceUrl.pathname = /\.(?:ttf|otf|woff2?)$/i.test(sourceUrl.pathname)
     ? sourceUrl.pathname.replace(/\.(?:ttf|otf|woff2?)$/i, '.font.glb')
@@ -2293,10 +2315,13 @@ function resolveFontRequest(input: FontInput, baseUrl: URL | undefined): Resolve
   return { sourceUrl: source, bakedUrl: sourceUrl.href };
 }
 
-function normalizeFontInput(input: unknown): {
-  source?: string | URL | FontBytesInput;
-  baked?: string | URL | FontBytesInput | null;
-} {
+interface NormalizedFontInput {
+  readonly source?: string | URL | FontBytesInput;
+  readonly baked?: string | URL | FontBytesInput | null;
+  readonly variation?: FontVariationRequest;
+}
+
+function normalizeFontInput(input: unknown): NormalizedFontInput {
   if (typeof input === 'string' || input instanceof URL) return { source: input };
   if (typeof input !== 'object' || input === null) {
     throw new GlyphFontError('INVALID_FONT_INPUT', 'font input must be a URL or source object');
@@ -2307,16 +2332,23 @@ function normalizeFontInput(input: unknown): {
   if (source === undefined && (baked === undefined || baked === null)) {
     throw new GlyphFontError('INVALID_FONT_INPUT', 'font input must provide source or baked');
   }
+  const variation = normalizeFontVariation(Reflect.get(input, 'variation'), 'font variation');
+  if (variation !== undefined && source === undefined) throw fontVariationRequiresSource();
   return {
     ...(source === undefined ? {} : { source }),
     ...(baked === undefined ? {} : { baked }),
+    ...(variation === undefined ? {} : { variation }),
   };
 }
 
 function validatedFontInput(input: unknown): FontInput {
   const value = normalizeFontInput(input);
   if (value.source === undefined) return { baked: value.baked! };
-  return value.baked === undefined ? { source: value.source } : { source: value.source, baked: value.baked };
+  return {
+    source: value.source,
+    ...(value.baked === undefined ? {} : { baked: value.baked }),
+    ...(value.variation === undefined ? {} : { variation: value.variation }),
+  };
 }
 
 function normalizeUrl(value: string | URL, baseUrl: URL | undefined): string {
@@ -2358,7 +2390,7 @@ function resolveBaseUrl(value: string | URL | undefined): URL | undefined {
 }
 
 function requestKey(request: ResolvedFontRequest): string {
-  return `font:${CORE_FORMAT_VERSION}:${CORE_BAKER_VERSION}:${request.sourceUrl ?? byteInputKey(request.sourceBytes)}:${request.bakedUrl ?? byteInputKey(request.bakedBytes)}`;
+  return `font:${CORE_FORMAT_VERSION}:${CORE_BAKER_VERSION}:${request.sourceUrl ?? byteInputKey(request.sourceBytes)}:${request.bakedUrl ?? byteInputKey(request.bakedBytes)}:${canonicalJson(request.variation?.axes ?? null)}`;
 }
 
 function isHierarchical(url: URL): boolean {

@@ -184,6 +184,7 @@ export type {
   FontFaceSource,
   FontFaceRasterOf,
 } from './font-face.js';
+export type { FontVariationRequest } from './font-baker/index.js';
 export type {
   FontFaceTransfer,
   SerializedFontFace,

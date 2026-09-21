@@ -137,7 +137,19 @@ test('FontFace rejects legacy loader and unowned source/config forms at its publ
   assert.throws(() => glyph.fontFace(new ArrayBuffer(0)), /FontFace source must be a URL, Blob, or SerializedFontFace/);
   assert.throws(
     () => glyph.fontFace('/fonts/config.font.glb', { src: '/fonts/other.font.glb' }),
-    /FontFace config only accepts family and format/,
+    /FontFace config only accepts family, format, and variation/,
+  );
+  assert.throws(
+    () => glyph.fontFace('/fonts/flat-axes.ttf', { variation: { wght: 700 } }),
+    /FontFace variation must be an object with an axes map/,
+  );
+  assert.throws(
+    () => glyph.fontFace('/fonts/long-tag.ttf', { variation: { axes: { weight: 700 } } }),
+    /FontFace variation axis tag "weight" must be exactly four printable ASCII bytes/,
+  );
+  assert.throws(
+    () => glyph.fontFace('/fonts/keyword.ttf', { variation: { axes: { wght: 'bold' } } }),
+    /FontFace variation axis wght must be a finite number/,
   );
   assert.throws(
     () => glyph.fontFace('/fonts/no-formats.font.glb', { format: [] }),
