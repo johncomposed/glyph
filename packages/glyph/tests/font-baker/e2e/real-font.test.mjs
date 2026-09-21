@@ -275,7 +275,6 @@ test('the Oxanium variable fixture bakes one pinned instance that shapes like Ha
   assert.deepEqual(extension.variation, manifest.bake.expectedVariation);
   assert.equal(extension.provenance.sourceFingerprint, manifest.source.fontFingerprint);
 
-  // The default instance shares every retained table byte and differs only in its coordinates.
   const defaultInstance = baker.bake({ source, descriptor: { formatVersion: 0, fontFaceIndex: 0 } });
   const defaultExtension = (await validateFontArtifact(defaultInstance.artifacts[0].bytes)).document.extensions
     .PMNDRS_font;

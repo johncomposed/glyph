@@ -511,9 +511,7 @@ export async function fontIsUpToDate(request: {
   if (font.provenance?.bakerVersion !== FONT_BAKER_VERSION) {
     return { fresh: false, reason: 'a different core baker produced this font' };
   }
-  // The source fingerprint cannot see which instance a variable font was pinned to, but the
-  // shaping fingerprint folds the resolved coordinates in. Re-running only the shaping bake is
-  // cheap and compares the request the way the artifact recorded it; a static font skips it.
+  // The source fingerprint cannot see the pinned instance; the shaping fingerprint folds the coordinates in.
   if (request.variation !== undefined || font.variation !== undefined) {
     const baker = await defaultFontBaker();
     const core = baker.bake({

@@ -32,10 +32,7 @@ impl From<BuildError> for FontOutlineError {
     }
 }
 
-/// Resolve and normalize one font-local glyph at `location` into Slug's quadratic geometry.
-///
-/// CFF cubics use `cubic_subdivisions`; TrueType outlines ignore it. A static font, or a
-/// variable font at its default instance, passes an empty location.
+/// Resolve one glyph at `location` into Slug quadratics; CFF cubics use `cubic_subdivisions`.
 pub fn font_glyph_geometry(
     font: &FontRef<'_>,
     glyph_id: GlyphId,

@@ -219,7 +219,6 @@ fn variable_fonts_bake_to_one_pinned_instance() {
             "maxp"
         ]
     );
-    // Same retained bytes, different instance: only the coordinates separate these identities.
     assert_eq!(tables(&default), tables(&semibold));
     assert_ne!(default.artifacts[0].id, semibold.artifacts[0].id);
     assert_eq!(clamped.artifacts[0].id, maximum.artifacts[0].id);

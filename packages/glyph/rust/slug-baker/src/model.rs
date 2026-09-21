@@ -62,8 +62,7 @@ pub struct SlugPackagingV0 {
 pub struct SlugBakeRequestV0 {
     pub source_fingerprint: String,
     pub font_face_index: u32,
-    /// Normalized F2Dot14 coordinates of the baked instance in `fvar` axis order; empty for a
-    /// static font. The core bake resolved them, and the shaping fingerprint already folds them in.
+    /// Normalized F2Dot14 coordinates in `fvar` axis order; empty for a static font.
     #[serde(default)]
     pub variation_coordinates: Vec<i16>,
     pub glyph_count: u16,

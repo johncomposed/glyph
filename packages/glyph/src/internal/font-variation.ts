@@ -3,10 +3,7 @@ import type { FontVariationRequest } from '../font-baker/index.js';
 /** The baker's `fvar` tag rule: exactly four printable ASCII bytes. */
 const AXIS_TAG = /^[\x20-\x7e]{4}$/u;
 
-/**
- * Copy caller-authored axis settings into a frozen variation request. An absent or empty axis map returns `undefined`,
- * which the baker reads as the `fvar` default instance; the two spellings bake the same artifact.
- */
+/** Freeze caller-authored axis settings; an absent or empty axis map is the `fvar` default instance. */
 export function normalizeFontVariation(value: unknown, label: string): FontVariationRequest | undefined {
   if (value === undefined) return undefined;
   if (!isNonArrayObject(value) || !isNonArrayObject(value.axes)) {

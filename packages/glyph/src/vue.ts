@@ -157,11 +157,7 @@ export interface TextGroupComponent {
   new (props: VueTextGroupProps): VueTextGroupInstance & { $props: VueTextGroupProps };
 }
 
-/**
- * One `GlyphProvider.fontFaces` entry: a source the provider declares and owns, a caller-owned FontFace, or a source
- * config whose optional `format` and `variation` reach `glyph.fontFace` unchanged. A pinned variation instance is part
- * of the entry's identity, so a table naming another instance is a different table.
- */
+/** One `GlyphProvider.fontFaces` entry; a source config's `format` and `variation` reach `glyph.fontFace` unchanged. */
 export type GlyphProviderFontFace = FontFaceSource | FontFace | ProviderFontFaceConfig;
 
 type ProviderFontFaceConfig = Readonly<{

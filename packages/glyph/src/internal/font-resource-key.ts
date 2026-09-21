@@ -7,11 +7,7 @@ import { canonicalJson } from './raster-identity.js';
 const sourceIds = new WeakMap<object, number>();
 let nextSourceId = 1;
 
-/**
- * Canonical identity for one adapter-owned FontFace declaration and raster request. A pinned variation instance is part
- * of that identity, because the same source baked at two instances is two declarations; the `fvar` default instance and
- * an omitted variation share one identity because they bake the same artifact.
- */
+/** Canonical identity for one adapter-owned FontFace declaration, including its pinned variation instance. */
 export function fontResourceKey(
   source: FontFaceSource,
   format: FontFaceConfig['format'],

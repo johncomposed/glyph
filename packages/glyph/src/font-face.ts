@@ -62,11 +62,7 @@ export type FontFaceDeclaredFormat<Declaration> = Declaration extends readonly F
 export type FontFaceConfig<Declaration = FontFaceFormatDeclaration> = {
   readonly family?: string;
   readonly format?: FontFaceFormatInput<Declaration>;
-  /**
-   * Pin a variable source to one static instance by user-space `fvar` axis values, for example
-   * `{ axes: { wght: 700 } }`. The instance is baked at runtime, so the face skips baked-sibling discovery; omitted
-   * means the `fvar` default instance. A baked artifact or transferred face already carries its instance.
-   */
+  /** Pin a variable source to one baked instance by `fvar` axis values, for example `{ axes: { wght: 700 } }`. */
   readonly variation?: FontVariationRequest;
 };
 

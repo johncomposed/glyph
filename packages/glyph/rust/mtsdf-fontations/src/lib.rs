@@ -10,8 +10,7 @@ use skrifa::{
     raw::TableProvider,
 };
 
-/// One unscaled Fontations glyph at one variation location, presented through the MTSDF outline
-/// contract.
+/// One unscaled Fontations glyph at one variation location, as an MTSDF outline source.
 pub struct FontationsOutlineSource<'font> {
     glyph: skrifa::outline::OutlineGlyph<'font>,
     location: LocationRef<'font>,
@@ -57,8 +56,7 @@ impl OutlineSource for FontationsOutlineSource<'_> {
     }
 }
 
-/// Resolve one glyph at `location` without reparsing or flattening its maintained font outline.
-/// A static font, or a variable font at its default instance, passes an empty location.
+/// Resolve one glyph at `location`; an empty location is the default instance.
 pub fn font_outline_source<'font>(
     font: &'font FontRef<'font>,
     glyph_id: GlyphId,

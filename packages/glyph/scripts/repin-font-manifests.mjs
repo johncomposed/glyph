@@ -43,7 +43,6 @@ for (const entry of (await readdir(fontsDirectory, { withFileTypes: true })).fil
   if (fontFile === undefined) continue;
 
   const source = await readFile(new URL(fontFile, directory));
-  // A manifest pins one static instance; a variable face names its axis values in face.variations.
   const axes = manifest.face?.variations ?? {};
   const { artifacts } = baker.bake({
     source,

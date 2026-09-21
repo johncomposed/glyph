@@ -533,8 +533,7 @@ function validateShapingSfnt(bytes: Uint8Array, metrics: Readonly<Record<string,
   ) {
     fail('SFNT_METRICS_IDENTITY', 'serialized font identity does not match the shaping SFNT');
   }
-  // A retained `fvar` and a recorded `variation` must appear together, and the recorded
-  // coordinates must cover every axis: the shaper indexes them positionally.
+  // The shaper indexes coordinates positionally, so a variable SFNT records one per fvar axis.
   const fvar = tables.get('fvar');
   if (fvar === undefined && variation !== undefined) {
     fail('FONT_VARIATION_STATIC', 'a static shaping SFNT must not record a variation instance');
@@ -556,8 +555,7 @@ function validateShapingSfnt(bytes: Uint8Array, metrics: Readonly<Record<string,
   const ascender = useTypoMetrics ? os2.getInt16(68, false) : hhea.getInt16(4, false);
   const descender = useTypoMetrics ? os2.getInt16(70, false) : hhea.getInt16(6, false);
   const lineGap = useTypoMetrics ? os2.getInt16(72, false) : hhea.getInt16(8, false);
-  // A pinned instance with `MVAR` carries baker-applied deltas on top of these table values;
-  // the Rust baker owns that arithmetic, so only the static selection policy is re-derived here.
+  // MVAR deltas are baker-owned, so only the static hhea/OS-2 selection policy is re-derived here.
   const varied = fvar !== undefined && tables.has('MVAR');
   if (!varied && (metrics.ascender !== ascender || metrics.descender !== descender || metrics.lineGap !== lineGap)) {
     fail('SFNT_LINE_METRICS', 'serialized line metrics do not match the V0 selection policy');

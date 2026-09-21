@@ -147,8 +147,6 @@ fn shape_case(
         .iter()
         .map(|variation| Variation::from_str(variation).map_err(str::to_owned))
         .collect::<Result<Vec<_>, _>>()?;
-    // The instance normalizes user-space settings through the font's own `fvar`/`avar`, so the
-    // reduced shaping payload and the source font agree as long as those tables survive.
     let instance =
         (!variations.is_empty()).then(|| ShaperInstance::from_variations(font, variations));
     let shaper = shaper_data.shaper(font).instance(instance.as_ref()).build();

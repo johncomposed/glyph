@@ -84,8 +84,7 @@ struct RegisteredFont {
     sfnt: Vec<u8>,
     extents: Vec<u8>,
     availability: Vec<u8>,
-    /// Normalized F2Dot14 coordinates of the baked instance in `fvar` axis order; empty for a
-    /// static font. The baker chose them once, so every plan for this font shares them.
+    /// Normalized F2Dot14 coordinates in `fvar` axis order; empty for a static font.
     coordinates: Vec<i16>,
     metrics: FontMetrics,
     data: ShaperData,
@@ -258,8 +257,7 @@ impl ShaperRegistry {
             .map_err(|_| STATUS_RESULT_TOO_LARGE)
     }
 
-    /// `coordinates` holds the baked instance's normalized F2Dot14 coordinates as little-endian
-    /// `i16` pairs in `fvar` axis order, and is empty for a static font.
+    /// `coordinates` is the baked instance as little-endian `i16` pairs in `fvar` axis order.
     #[allow(clippy::too_many_arguments)]
     pub fn register_font(
         &mut self,
@@ -302,9 +300,7 @@ impl ShaperRegistry {
                     .and_then(|height| u16::try_from(height).ok())
                     .filter(|height| *height != 0)
                     .unwrap_or(fallback_cap_height);
-                // The host already applied `MVAR` to the decoration metrics it passes in; the
-                // engine reads the remaining line metrics from the payload and applies the same
-                // deltas here so a variable instance measures like the artifact describes it.
+                // Host-passed decoration metrics already carry `MVAR`; apply it to the payload metrics.
                 let vary = MetricVariation::new(&font, &coordinates);
                 FontMetrics {
                     units_per_em,

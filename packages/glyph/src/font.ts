@@ -62,10 +62,7 @@ export interface FontSourceOverride {
   readonly source: string | URL | FontBytesInput;
   /** Explicitly set null to skip baked-sibling discovery for this load. */
   readonly baked?: string | URL | FontBytesInput | null;
-  /**
-   * Static instance to bake a variable source at; omitted means the `fvar` default instance. One implicit baked sibling
-   * holds one instance, so a request that names an instance without naming `baked` skips sibling discovery.
-   */
+  /** Instance to bake a variable source at; naming one without `baked` skips sibling discovery. */
   readonly variation?: FontVariationRequest;
 }
 

@@ -6,11 +6,7 @@ import { isFingerprint } from '../internal/fingerprint.js';
 export { FONT_BAKER_VERSION, FONT_FORMAT_VERSION } from './contract.js';
 export { fontBakerAbi } from './generated/font-baker-abi.js';
 
-/**
- * Static variation instance to bake, as user-space axis values keyed by four-byte `fvar` tag
- * (for example `{ wght: 700 }`). Values clamp to each axis range; axes left out stay at their
- * default. Naming an axis a static font does not have is a bake error.
- */
+/** User-space axis values keyed by four-byte `fvar` tag, for example `{ wght: 700 }`; values clamp to axis ranges. */
 export interface FontVariationRequest {
   readonly axes: Readonly<Record<string, number>>;
 }

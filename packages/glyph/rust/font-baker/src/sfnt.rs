@@ -33,9 +33,7 @@ const REQUIRED_TABLES: [Tag; 6] = [
     Tag::new(b"hmtx"),
     Tag::new(b"OS/2"),
 ];
-// Variation tables that the shaper still reads at the baked instance stay in the payload:
-// `fvar`/`avar` describe the axis space the coordinates index, `HVAR`/`VVAR` vary advances, and
-// `MVAR` varies the line metrics. `gvar` and `cvar` leave with the outlines they modify.
+// `fvar`/`avar`/`HVAR`/`VVAR`/`MVAR` stay for the shaper; `gvar`/`cvar` leave with the outlines.
 const OPTIONAL_TABLES: [Tag; 13] = [
     Tag::new(b"BASE"),
     Tag::new(b"GDEF"),
@@ -144,9 +142,7 @@ pub(crate) fn build_shaping_payload(
             i16::try_from(units_per_em / 14).unwrap_or(i16::MAX).max(1),
         ),
     };
-    // `MVAR` moves each line metric by a delta at the baked instance; a static font, or a
-    // variable font without `MVAR`, contributes zero. The delta applies to whichever source
-    // (`hhea` or OS/2 typo) the flag selected, matching Skrifa and HarfBuzz.
+    // `MVAR` deltas apply to whichever metric source the flag selected, matching Skrifa and HarfBuzz.
     let mvar = font.mvar().ok();
     let vary = |tag: &[u8; 4], value: i16| -> i16 {
         let delta = mvar
@@ -240,10 +236,7 @@ fn reject_envelope(source: &[u8]) -> Result<(), BakeError> {
     Ok(())
 }
 
-/// Pin a variable source to one instance. A static font yields `None`; requesting axes on it is
-/// a descriptor error rather than a silent no-op. A variable font must carry `HVAR`: the
-/// shaping payload drops `gvar` with the outlines, so advances cannot fall back to phantom
-/// points the way HarfBuzz does with a complete font.
+/// Pin a variable source to one instance; `HVAR` is required since `gvar` leaves with the outlines.
 fn resolve_variation(
     font: &FontRef<'_>,
     request: Option<&VariationRequestV0>,
@@ -451,9 +444,7 @@ fn encode_bounds(bounds: [f32; 4]) -> Result<[i16; 4], BakeError> {
     ])
 }
 
-/// A static font keeps the original three-block v0 digest. A variable instance appends its
-/// normalized coordinates: two instances of one font share every retained table byte and differ
-/// only here, so the coordinates must enter the identity.
+/// A variable instance appends its coordinates to the three-block v0 digest; static fonts do not.
 fn shaping_fingerprint(
     sfnt: &[u8],
     extents: &[u8],
