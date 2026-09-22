@@ -47,9 +47,10 @@ async function waitForFormat(
       selected !== undefined && 'commitState' in selected && typeof selected.commitState === 'function'
         ? selected.commitState()
         : undefined;
-    // The Slug world span and TextGroup labels share one draw; the selected Latin/icon paragraph
-    // contributes two resource-partitioned draws, for six total.
-    if (selected?.visible === true && commit?.status === 'committed' && counts.draws === 6 && counts.records === 47) {
+    // Hidden Activity paragraphs stay mounted, so every format's Latin/icon and Oxanium light/heavy
+    // paragraphs contribute draws; the Slug world span and TextGroup labels share one. That is 12
+    // draws and 107 records: 14 label glyphs plus three formats of 11 world and 20 Oxanium glyphs.
+    if (selected?.visible === true && commit?.status === 'committed' && counts.draws === 12 && counts.records === 107) {
       return { draws: 2, records: 11 };
     }
     await nextFrame();

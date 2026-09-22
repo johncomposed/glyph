@@ -2,6 +2,11 @@
 
 ## 2026-09-21
 
+- **Rendered a runtime-baked variable font in the R3F example** — The hello-world app now declares the Oxanium
+  fixture at `wght` 300 and 800 through `glyph.fontFace(url, { format, variation })`, follows the raster-format
+  controls through typed selections, and switches instances in a nested run; its browser probe counts the new
+  paragraphs. See [the examples reference](packages/examples.md).
+
 - **Accepted a pinned variation in provider font tables** — React and Vue `GlyphProvider.fontFaces` entries now take
   `{ src, format?, variation? }` and forward the instance to `glyph.fontFace` unchanged. The shared adapter resource key
   includes the normalized instance, so a table naming another instance is a changed declaration, while the `fvar`

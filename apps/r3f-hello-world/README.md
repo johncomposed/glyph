@@ -14,7 +14,11 @@ application initializes `WebGPURenderer`; only `renderer.render(scene, camera)` 
 The R3F twin renders `Hello world` through the public React adapter, binds the globe span to a subsetted Font Awesome
 font, and switches between Bitmap, MSDF, and Slug using controls rendered inside the canvas. The explicit per-format
 hooks preload the checked font requests and suspend on the same stable resources. The Slug-rendered controls use a
-`TextGroup` so their three labels can batch explicitly.
+`TextGroup` so their three labels can batch explicitly. A second paragraph pulls the variable Oxanium source straight
+from the benchmark fixtures and bakes it in the browser at two `wght` instances: `glyph.fontFace(url, { format,
+variation: { axes: { wght: 300 } } })` and the same at `800`. Each declaration is its own font with its own runtime
+bake and cache entry, the nested run switches instances inline, and its typed `.bitmap`/`.msdf`/`.slug` selections
+follow the same format controls.
 
 ```sh
 mise exec -- pnpm --filter @pmndrs/glyph-examples dev
