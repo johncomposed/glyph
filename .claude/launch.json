@@ -10,7 +10,7 @@
     {
       "name": "r3f",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@pmndrs/glyph-r3f-hello-world", "run", "dev", "--port", "5274", "--strictPort"],
+      "runtimeArgs": ["--filter", "@pmndrs/glyph-examples", "run", "dev", "--port", "5274", "--strictPort"],
       "port": 5274
     }
   ]

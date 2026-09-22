@@ -1,10 +1,11 @@
 import type { Font } from '@pmndrs/glyph';
 import { Text, TextGroup, useBitmap, useMsdf, useSlug } from '@pmndrs/glyph/react';
-import { bitmap, msdf, slug } from '@pmndrs/glyph';
+import { bitmap, glyph, msdf, slug } from '@pmndrs/glyph';
 import { useThree, type ThreeEvent } from '@react-three/fiber/webgpu';
 import { Activity, useState } from 'react';
 import { float, fwidth, smoothstep, uv, vec2 } from 'three/tsl';
 
+import oxaniumFontUrl from '../../../benches/fixtures/fonts/oxanium-wght/Oxanium[wght].ttf?url';
 import iconFontUrl from '../assets/font-awesome-world.font.glb?url';
 import latinFontUrl from '../assets/inter-latin.font.glb?url';
 
@@ -21,6 +22,13 @@ const latinFont = latinFontUrl;
 const iconFont = iconFontUrl;
 const bitmapOptions = { strikes: [32] } as const;
 
+// A variable font source is baked in the browser at runtime. Each declaration pins the same Oxanium bytes to one
+// static `wght` instance, so the two faces below are two distinct fonts with their own bake and cache entry.
+const variableFont = oxaniumFontUrl;
+const variableFormats = [bitmap(bitmapOptions), msdf, slug] as const;
+const oxaniumLight = glyph.fontFace(variableFont, { format: variableFormats, variation: { axes: { wght: 300 } } });
+const oxaniumHeavy = glyph.fontFace(variableFont, { format: variableFormats, variation: { axes: { wght: 800 } } });
+
 // Preload the initial scene's raster formats before React first requests them.
 useBitmap.preload(latinFont, bitmapOptions);
 useMsdf.preload(latinFont);
@@ -28,6 +36,9 @@ useSlug.preload(latinFont);
 useBitmap.preload(iconFont, bitmapOptions);
 useMsdf.preload(iconFont);
 useSlug.preload(iconFont);
+// Loading the whole declaration bakes every declared raster of one instance in a single Worker request.
+void oxaniumLight.load();
+void oxaniumHeavy.load();
 
 export function App() {
   const viewport = useThree((state) => state.viewport);
@@ -41,16 +52,16 @@ export function App() {
   const slugIcons = useSlug(iconFont);
 
   const fonts = [
-    { font: bitmapLatin, icon: bitmapIcons, format: 'bitmap' },
-    { font: msdfLatin, icon: msdfIcons, format: 'msdf' },
-    { font: slugLatin, icon: slugIcons, format: 'slug' },
+    { font: bitmapLatin, icon: bitmapIcons, light: oxaniumLight.bitmap, heavy: oxaniumHeavy.bitmap, format: 'bitmap' },
+    { font: msdfLatin, icon: msdfIcons, light: oxaniumLight.msdf, heavy: oxaniumHeavy.msdf, format: 'msdf' },
+    { font: slugLatin, icon: slugIcons, light: oxaniumLight.slug, heavy: oxaniumHeavy.slug, format: 'slug' },
   ] as const;
 
   return (
     <>
       <ButtonGroup active={activeFormat} font={slugLatin} onSelect={setActiveFormat} />
       <group name="world-text">
-        {fonts.map(({ font, icon, format }) => (
+        {fonts.map(({ font, icon, light, heavy, format }) => (
           <Activity key={format} mode={activeFormat === format ? 'visible' : 'hidden'}>
             {/* A nested Text is an inline run: it inherits the paragraph's font and text style unless it
                 overrides them, and carries no transform of its own because it is not an object in the scene. */}
@@ -65,6 +76,20 @@ export function App() {
               Hello world{' '}
               <Text font={icon} style={{ color: COLORS[format] }}>
                 {WORLD_ICON}
+              </Text>
+            </Text>
+            {/* A FontFace selection suspends until its runtime bake lands; the nested run switches to the heavier instance. */}
+            <Text
+              constraints={{ width: { mode: 'exact', size: viewport.width } }}
+              font={light}
+              layout={{ align: 'center', wrap: 'none' }}
+              name={`variable-${format}`}
+              position={[-viewport.width / 2, -48, 0]}
+              style={{ color: '#aeb9cf', fontSize: 40, lineHeight: 1 }}
+            >
+              Oxanium 300{' '}
+              <Text font={heavy} style={{ color: '#f4f7ff' }}>
+                Oxanium 800
               </Text>
             </Text>
           </Activity>

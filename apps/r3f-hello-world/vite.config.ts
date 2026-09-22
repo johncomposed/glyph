@@ -13,6 +13,10 @@ const FONT_LICENSES = [
     url: new URL('../../benches/fixtures/fonts/inter-v4.1/LICENSE.txt', import.meta.url),
   },
   {
+    name: 'Oxanium',
+    url: new URL('../../benches/fixtures/fonts/oxanium-wght/OFL.txt', import.meta.url),
+  },
+  {
     name: 'Font Awesome Free 6.7.2',
     url: new URL('../../benches/fixtures/fonts/font-awesome-free-6.7.2/LICENSE.txt', import.meta.url),
   },
